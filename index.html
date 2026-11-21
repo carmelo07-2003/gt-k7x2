@@ -361,6 +361,7 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
       <button id="learnRun" class="btn pri wide">学習する</button>
       <div class="row2" style="margin-top:8px"><button id="learnReset" class="btn small">学習を元に戻す</button><button id="learnClear" class="btn small">ためた材料を消す</button></div>
       <div class="row2" style="margin-top:8px"><button id="learnExport" class="btn small">学習データを書き出す</button><button id="learnImport" class="btn small">読み込む</button></div>
+      <div class="row2" style="margin-top:8px"><button id="recExport" class="btn small">最後の録音を書き出す（WAV）</button></div>
       <input type="file" id="learnFile" accept=".json,application/json" hidden>
       <p class="sub" id="learnIO"></p>
       <p class="hint">使い方：①録音して解析 ②下の再生バーで聞きながら、TAB譜の列をタップして直す（列の真下に直すボタンが出ます。雑音は「消す（ノイズ）」、前に弾いた音が響いている途中で同じ音が出てきたら「前の音の響き（消す）」で直します。拾われなかった音は、再生を止めた位置で「＋足す」） ③「確認済み」 ④何本か確認したら「学習する」。直さなかった所は「合っていた」として覚えます。確認済みの録音は一覧から1本ずつ消せて、直し直したら同じボタンで上書きできます。学習は元の判定器に「補正」を足すだけで、良くならなければ採用しません。</p>
@@ -1281,6 +1282,24 @@ $('#learnExport').addEventListener('click',async()=>{
   }catch(e){if(e&&e.name==='AbortError'){$('#learnIO').textContent='共有をやめました';return}}
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
   $('#learnIO').textContent=`「${name}」を保存しました（録音${n}本・音の正解${pn}・打音の正解${pp}）。このファイルをClaudeとのチャットに送ってください`;
+});
+/* 最後の録音をWAVで書き出す（拾われない音をClaudeに調べてもらう用） */
+$('#recExport').addEventListener('click',async()=>{
+  if(!REC.raw||!REC.raw.length){$('#learnIO').textContent='書き出す録音がまだありません（先に録音してください）';return}
+  const x=REC.raw,sr=REC.sr||48000,n=x.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  const ws=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};
+  ws(0,'RIFF');v.setUint32(4,36+n*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,n*2,true);
+  let pk=1e-9;for(let i=0;i<n;i++){const a=Math.abs(x[i]);if(a>pk)pk=a}const g=pk>1?1/pk:1;
+  for(let i=0;i<n;i++){const s=Math.max(-1,Math.min(1,x[i]*g));v.setInt16(44+i*2,s<0?s*0x8000:s*0x7fff,true)}
+  const d=new Date(),pad=q=>String(q).padStart(2,'0');
+  const name=`guitar-aibo-rec-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}_tune${tuning().join('-')}_capo${S.capo}${EAR.harmPref?'_harm':''}.wav`;
+  const blob=new Blob([buf],{type:'audio/wav'});
+  try{const file=new File([blob],name,{type:'audio/wav'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'ギター相棒の録音'});$('#learnIO').textContent='録音を共有しました';return}
+  }catch(e){if(e&&e.name==='AbortError'){$('#learnIO').textContent='共有をやめました';return}}
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
+  $('#learnIO').textContent=`「${name}」を保存しました。このファイルをClaudeとのチャットに送ってください`;
 });
 $('#learnImport').addEventListener('click',()=>$('#learnFile').click());
 $('#learnFile').addEventListener('change',async e=>{
