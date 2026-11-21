@@ -1050,6 +1050,7 @@ $('#earPos').addEventListener('click',e=>{
 function fixButtons(e){
   let h='<div class="fixrow"><span class="lab">間違いを直す</span><button class="chip warn" data-act="del">消す</button>';
   if(e.k!=='p')h+='<button class="chip" data-act="toLo">打音（ドン）にする</button><button class="chip" data-act="toHi">打音（パン）にする</button>';
+  if(e.k==='p')h+='<button class="chip" data-act="toNote">音だった（音にする）</button>';
   if(e.k==='n')h+='<button class="chip" data-act="p-12">1オクターブ下</button><button class="chip" data-act="p-1">半音下</button><button class="chip" data-act="p1">半音上</button><button class="chip" data-act="p12">1オクターブ上</button>';
   return h+'</div>';
 }
@@ -1059,6 +1060,15 @@ $('#earAct').addEventListener('click',e=>{
   const fa=b.dataset.act;
   if(ev&&fa==='del'){EAR.hist.splice(EAR.sel,1);EAR.sel=Math.min(EAR.sel,EAR.hist.length-1);edited();return}
   if(ev&&(fa==='toLo'||fa==='toHi')){EAR.hist[EAR.sel]={k:'p',lo:fa==='toLo',t:ev.t};edited();return}
+  // 打音を「音」に直す：その時刻にAIが反応した高さと、開放弦の高さから選ぶ
+  if(ev&&fa==='toNote'){
+    const t=ev.t/1000,cs=((REC.res&&REC.res.cands)||[]).filter(c=>Math.abs(c.time-0.009-t)<0.12).sort((a,b)=>b.p-a.p);
+    const seen=new Set(),ms=[];for(const c of cs){if(!seen.has(c.m)){seen.add(c.m);ms.push(c.m)}if(ms.length>=5)break}
+    const opens=tuning().map((o,i)=>({m:o+S.capo,s:i+1})).filter(o=>!seen.has(o.m)).reverse();
+    b.closest('.fixrow').insertAdjacentHTML('afterend','<div class="fixrow"><span class="lab">何の音でしたか？</span>'+ms.map(m=>`<button class="chip" data-act="setN" data-m="${m}">${nm(m)}${oc(m)}</button>`).join('')+opens.map(o=>`<button class="chip" data-act="setN" data-m="${o.m}">${o.s}弦開放（${nm(o.m)}）</button>`).join('')+'</div>');
+    b.disabled=true;return;
+  }
+  if(ev&&fa==='setN'){const m=+b.dataset.m;EAR.hist[EAR.sel]={k:'n',m,t:ev.t,h:false};edited();play(m);return}
   if(ev&&fa&&/^p-?\d+$/.test(fa)&&ev.k==='n'){ev.m+=+fa.slice(1);delete ev.fix;ev.h=false;edited();play(ev.m);return}
   if(b.dataset.ch!=null){micStop();S.ch=+b.dataset.ch;save();renderChord();showTab('chord');return}
   if(!ev)return;const a=b.dataset.act;
