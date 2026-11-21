@@ -161,6 +161,9 @@ input[type=range]{width:100%;accent-color:var(--hot);min-height:40px}
 #addBox:empty{display:none}
 .learn h3{margin:0 0 4px}
 .learn .btn{margin-top:8px}
+.lrow{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #33261d;font-size:14px}
+.lrow span{flex:1}
+.lrow .chip{min-height:34px}
 .rtime{font-size:clamp(56px,18vw,80px);font-weight:900;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums}
 .rtime.on{color:var(--hot)}
 .prog{height:10px;border-radius:5px;background:#3a2c22;margin-top:12px;overflow:hidden}
@@ -327,10 +330,11 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
     <div class="card learn" style="margin-top:12px">
       <h3>あなたの演奏を覚えさせる</h3>
       <p class="sub" id="learnStat"></p>
+      <div id="learnList"></div>
       <button id="learnConfirm" class="btn wide">この録音は確認済み（直した内容を覚える材料にする）</button>
       <button id="learnRun" class="btn pri wide">学習する</button>
       <div class="row2" style="margin-top:8px"><button id="learnReset" class="btn small">学習を元に戻す</button><button id="learnClear" class="btn small">ためた材料を消す</button></div>
-      <p class="hint">使い方：①録音して解析 ②TAB譜の列をタップして、間違いを直す（消す・打音にする・高さを直す、録音の再生を止めた位置に「＋足す」） ③「確認済み」 ④何本か確認したら「学習する」。直さなかった所は「合っていた」として覚えます。学習は元の判定器に「補正」を足すだけで、良くならなければ採用しません。「拾う細かさ」などを変えると解析し直しになり、直した内容は消えるので、先に設定してから直してください。</p>
+      <p class="hint">使い方：①録音して解析 ②TAB譜の列をタップして、間違いを直す（消す・打音にする・高さを直す、録音の再生を止めた位置に「＋足す」） ③「確認済み」 ④何本か確認したら「学習する」。確認済みの録音は上の一覧から1本ずつ消せます。確認したあとに直し直したら、同じボタンでその録音の分だけ上書きできます。直さなかった所は「合っていた」として覚えます。学習は元の判定器に「補正」を足すだけで、良くならなければ採用しません。「拾う細かさ」などを変えると解析し直しになり、直した内容は消えるので、先に設定してから直してください。</p>
     </div>
     <p class="hint">TAB譜：横線が弦（上が1弦）、数字が押さえるフレット、&lt;12&gt;はハーモニクスです。手の移動が少なくなるように、全体で並びを計算しています。列をタップすると、その音を鳴らして上に詳しく表示します。録音して解析すると、TAB譜は新しく作り直されます。録音を再生すると、今鳴っている列が光って譜面が追いかけます（列をタップすると、録音のその位置へ移動）。曲を流して聞かせるのは苦手なので、自分で弾いた音で使ってください。<br>AI解析：Spotify「Basic Pitch」（Apache-2.0）の結果を、ギター用に学習させた判定器で選び直しています（倍音や響きの拾い直しを除き、弦の物理を使ってTAB譜を決めます）。解析はすべてスマホの中で行います。</p>
   </section>
@@ -952,7 +956,7 @@ function buildFromRec(){
   if(!REC.out||!window.TabEngine)return;
   const style=$('#recStyle').value,sens=+$('#recSens').value;
   const res=TabEngine.transcribe(REC.out,REC.x22,{tuning:tuning(),capo:S.capo,sens,perc:EAR.perc,harmPref:EAR.harmPref,keepCands:true});
-  REC.res=res;REC.confirmed=false;EAR.edited=false;
+  REC.res=res;REC.confirmed=false;EAR.edited=false;if(REC.lastRaw!==REC.raw){REC.learnId=null;REC.lastRaw=REC.raw}else if(REC.learnId)REC.confirmed=loadLearn().some(r=>r.id===REC.learnId);
   const ev=TabEngine.groupEvents(res,{style});
   for(const e of ev){
     if(e.k==='n')e.h=EAR.harmPref&&hasHarm(e.m)&&!tuning().some(o=>o+S.capo===e.m);
@@ -1063,9 +1067,10 @@ $('#earAct').addEventListener('click',e=>{
   // 打音を「音」に直す：その時刻にAIが反応した高さと、開放弦の高さから選ぶ
   if(ev&&fa==='toNote'){
     const t=ev.t/1000,cs=((REC.res&&REC.res.cands)||[]).filter(c=>Math.abs(c.time-0.009-t)<0.12).sort((a,b)=>b.p-a.p);
-    const seen=new Set(),ms=[];for(const c of cs){if(!seen.has(c.m)){seen.add(c.m);ms.push(c.m)}if(ms.length>=5)break}
-    const opens=tuning().map((o,i)=>({m:o+S.capo,s:i+1})).filter(o=>!seen.has(o.m)).reverse();
-    b.closest('.fixrow').insertAdjacentHTML('afterend','<div class="fixrow"><span class="lab">何の音でしたか？</span>'+ms.map(m=>`<button class="chip" data-act="setN" data-m="${m}">${nm(m)}${oc(m)}</button>`).join('')+opens.map(o=>`<button class="chip" data-act="setN" data-m="${o.m}">${o.s}弦開放（${nm(o.m)}）</button>`).join('')+'</div>');
+    const opens=tuning().map((o,i)=>({m:o+S.capo,s:i+1})).reverse(),openSet=new Set(opens.map(o=>o.m));
+    const seen=new Set(),ms=[];for(const c of cs){if(!seen.has(c.m)&&!openSet.has(c.m)){seen.add(c.m);ms.push(c.m)}if(ms.length>=4)break}
+    const near=new Set(cs.slice(0,6).map(c=>c.m));
+    b.closest('.fixrow').insertAdjacentHTML('afterend','<div class="fixrow"><span class="lab">何の音でしたか？（★はAIがその時に反応した高さ）</span>'+opens.map(o=>`<button class="chip" data-act="setN" data-m="${o.m}">${near.has(o.m)?'★':''}${o.s}弦開放（${nm(o.m)}${oc(o.m)}）</button>`).join('')+ms.map(m=>`<button class="chip" data-act="setN" data-m="${m}">★${nm(m)}${oc(m)}</button>`).join('')+'</div>');
     b.disabled=true;return;
   }
   if(ev&&fa==='setN'){const m=+b.dataset.m;EAR.hist[EAR.sel]={k:'n',m,t:ev.t,h:false};edited();play(m);return}
@@ -1102,14 +1107,18 @@ function renderLearn(){
   const L=loadLearn(),c=(()=>{try{return JSON.parse(localStorage.getItem('gb_corr')||'null')}catch(e){return null}})();
   const pn=L.reduce((a,r)=>a+r.note.filter(x=>x.y).length,0),pp=L.reduce((a,r)=>a+r.perc.filter(x=>x.y).length,0);
   $('#learnStat').textContent=`確認済みの録音：${L.length}本（音の正解${pn}・打音の正解${pp}）／学習：${c?c.info:'まだ'}`;
-  const can=EAR.fromRec&&REC.res&&!REC.confirmed;$('#learnConfirm').disabled=!can;$('#learnConfirm').style.opacity=can?1:0.45;
-  $('#learnConfirm').textContent=REC.confirmed?'この録音は確認済みにしました':'この録音は確認済み（直した内容を覚える材料にする）';
+  $('#learnList').innerHTML=L.map((r,i)=>`<div class="lrow"><span>${i+1}. ${r.d||''}　音${r.note.filter(x=>x.y).length}・打音${r.perc.filter(x=>x.y).length}${r.id&&r.id===REC.learnId?'（今の録音）':''}</span><button class="chip warn" data-del="${i}">この1本を消す</button></div>`).join('');
+  const can=EAR.fromRec&&REC.res;$('#learnConfirm').disabled=!can;$('#learnConfirm').style.opacity=can?1:0.45;
+  $('#learnConfirm').textContent=REC.confirmed?'直し直した内容で上書きする（この録音の分だけ）':'この録音は確認済み（直した内容を覚える材料にする）';
   $('#earAdd').hidden=!(EAR.fromRec&&REC.url&&REC.res);
 }
 $('#learnConfirm').addEventListener('click',()=>{
-  if(!(EAR.fromRec&&REC.res)||REC.confirmed)return;
+  if(!(EAR.fromRec&&REC.res))return;
   const rows=TabEngine.learnRows(REC.res,EAR.hist);const L=loadLearn();
-  L.push({d:new Date().toLocaleString('ja-JP'),note:rows.note,perc:rows.perc});while(L.length>LEARN_MAX)L.shift();
+  const item={id:REC.learnId||('r'+Date.now()),d:new Date().toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}),note:rows.note,perc:rows.perc};
+  const j=L.findIndex(r=>r.id===item.id);
+  if(j>=0)L[j]=item;else L.push(item);   // 同じ録音なら上書き
+  REC.learnId=item.id;while(L.length>LEARN_MAX)L.shift();
   if(!saveLearn(L)){$('#learnStat').textContent='保存できませんでした（スマホの保存場所がいっぱいです）';return}
   REC.confirmed=true;renderLearn();
 });
@@ -1130,6 +1139,13 @@ $('#learnRun').addEventListener('click',()=>{
   },30);
 });
 $('#learnReset').addEventListener('click',()=>{try{localStorage.removeItem('gb_corr')}catch(e){}TabEngine.setCorr(null,null);renderLearn();if(EAR.fromRec&&REC.out&&!EAR.edited)buildFromRec()});
+$('#learnList').addEventListener('click',e=>{
+  const b=e.target.closest('[data-del]');if(!b)return;
+  if(b.dataset.arm!=='1'){b.dataset.arm='1';b.textContent='もう一度押すと消します';setTimeout(()=>{b.dataset.arm='';b.textContent='この1本を消す'},4000);return}
+  const L=loadLearn(),i=+b.dataset.del,r=L[i];L.splice(i,1);saveLearn(L);
+  if(r&&r.id===REC.learnId){REC.learnId=null;REC.confirmed=false}
+  renderLearn();
+});
 let clearArm=0;
 $('#learnClear').addEventListener('click',()=>{
   const b=$('#learnClear');

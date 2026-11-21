@@ -96,7 +96,7 @@
   }
 
   /* 学習済みの判定器（小さなニューラルネット）。重みはテストで学習して埋め込む */
-  let NOTE_NET = null, NOTE_NET2 = null, PERC_NET = null;
+  let NOTE_NET = null, NOTE_NET2 = null, PERC_NET = null, HARM_NETS = null;
   function mlp(net, v) {
     const z = v.map((x, i) => (x - net.mu[i]) / net.sd[i]);
     let h = z;
@@ -243,6 +243,12 @@
   /* ---------- 解析の本体 ---------- */
   function transcribe(bp, x, opt) {
     opt = opt || {};
+    // 「ハーモニクスを弾いている」の時は、ハーモニクスに強い音の判定器を使う
+    if (opt.harmPref && HARM_NETS && !opt._swapped) {
+      const keep = [NOTE_NET, NOTE_NET2];
+      NOTE_NET = HARM_NETS.note; NOTE_NET2 = HARM_NETS.note2;
+      try { return transcribe(bp, x, Object.assign({}, opt, { _swapped: true })); } finally { NOTE_NET = keep[0]; NOTE_NET2 = keep[1]; }
+    }
     const tuning = opt.tuning || [64, 59, 55, 50, 45, 40], capo = opt.capo || 0;
     const lo = Math.min(...tuning) + capo - 1, hi = Math.max(...tuning) + 24 + 4;
     const hf = hfEnvelope(x);
@@ -461,7 +467,7 @@
 
   G.TabEngine = {
     transcribe, groupEvents, assignTab, features, percFeatures, onsetCandidates, percCandidates, hfEnvelope, lowEnvelope, partialE, f2t,
-    setNets(n, p, n2) { NOTE_NET = n; PERC_NET = p; NOTE_NET2 = n2 || null; }, contextFeatures, mlp, NF,
+    setNets(n, p, n2, hn) { NOTE_NET = n; PERC_NET = p; NOTE_NET2 = n2 || null; HARM_NETS = hn || null; }, contextFeatures, mlp, NF,
     setCorr(n, p) { CORR_NOTE = n || null; CORR_PERC = p || null; }, getCorr() { return { note: CORR_NOTE, perc: CORR_PERC }; },
     learnFromRows, trainCorr, f1At, corrApply, learnRows,
   };
