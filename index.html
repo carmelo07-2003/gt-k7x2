@@ -962,7 +962,7 @@ function buildFromRec(){
   notes=notes.filter(n=>!(n.durationSeconds<0.2&&perc.some(p=>Math.abs(p.t/1000-n.startTimeSeconds)<0.07)));
   // 続けて始まった音（ジャラーンと鳴らした6本など）を1つのかたまりにまとめる
   const groups=[];
-  for(const n of notes){const g=groups[groups.length-1],st=n.startTimeSeconds;if(g&&st-g.last<0.06&&st-g.t<0.25){g.ns.push(n);g.last=st}else groups.push({t:st,last:st,ns:[n]})}
+  for(const n of notes){const g=groups[groups.length-1],st=n.startTimeSeconds;if(g&&st-g.last<0.08&&st-g.t<0.25){g.ns.push(n);g.last=st}else groups.push({t:st,last:st,ns:[n]})}
   const ev=[];let prevSet=null,prevT=-9,prevKind=null,prevChord=null;
   for(const g of groups){
     // 同じ高さは1つに。1オクターブ上の弱い音は倍音の聞き間違いとして消す
@@ -971,13 +971,14 @@ function buildFromRec(){
     ps=ps.filter(p=>!ps.some(q=>(p.m-q.m===12||p.m-q.m===24)&&p.a<q.a*0.6));
     ps.sort((a,b)=>a.m-b.m);
     const ms=ps.map(p=>p.m),tt=Math.round(g.t*1000),recent=g.t-prevT<0.5?prevSet:null;
-    const fresh=ps.filter(p=>!recent||!recent.has(p.m));
+    const fresh=ps.filter(p=>!recent||!recent.has(p.m)),span=g.last-g.t;
     let kind;
     if(style==='melody')kind=ms.length?'n':null;
     else if(style==='chord')kind=ms.length>=2?'g':'n';
     else if(ms.length<=1)kind='n';
-    else if(ms.length>=3&&fresh.length>=2)kind='g';
-    else if(prevKind==='g'&&ms.length>=3&&prevChord&&ms.filter(m=>prevChord.has(m)).length>=prevChord.size*0.7)kind='g';
+    // ジャラーンと鳴らすと、弦ごとに少しずつずれて始まる（0.04秒以上の広がり）。それをコードの目印にする
+    else if(ms.length>=3&&(fresh.length>=3||(span>=0.04&&fresh.length>=2)))kind='g';
+    else if(prevKind==='g'&&ms.length>=3&&span>=0.04&&prevChord&&ms.filter(m=>prevChord.has(m)).length>=prevChord.size*0.8)kind='g';
     else kind='n';
     if(kind==='n'){
       // 前の音が鳴り続けていても、新しく弾いた音（なければ一番強い音）を選ぶ
@@ -990,6 +991,10 @@ function buildFromRec(){
     }
     prevSet=new Set(ms);prevT=g.t;prevKind=kind;
   }
+  // 0.2秒以内に同じ音が続いたら、響きの拾い直しとして1つにまとめる
+  const key=e=>e.k==='n'?'n'+e.m:e.k==='g'?'g'+e.ms.join(','):'';
+  const ded=[];for(const e of ev){const p=ded[ded.length-1];if(p&&key(p)===key(e)&&e.t-p.t<200)continue;ded.push(e)}
+  ev.length=0;ded.forEach(e=>ev.push(e));
   perc.forEach(p=>ev.push(p));
   ev.sort((a,b)=>a.t-b.t);
   EAR.hist=ev;EAR.sel=ev.length?0:-1;saveHist();renderEarAll();
