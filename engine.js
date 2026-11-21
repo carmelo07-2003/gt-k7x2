@@ -113,10 +113,13 @@
    * 元の判定器の値（ロジット z）に、補正 b + a*z + Σ w_i*(標準化した特徴_i) を足す。
    * 補正が0なら元の判定器と同じ。学習は修正データだけで、強めの正則化をかけて少しずつ合わせる。 */
   let CORR_NOTE = null, CORR_PERC = null, CORR_HARM = null;
+  const CORR_MAX = 1.5;
   function corrApply(cm, net, v, z) {
     if (!cm) return z;
     let s = cm.b + cm.a * z;
     for (let i = 0; i < cm.w.length && i < v.length; i++) s += cm.w[i] * (v[i] - net.mu[i]) / net.sd[i];
+    // 安全装置：補正で動かす量に上限（少ない材料の学習で、はっきりした本物の音まで消さないように）
+    s = Math.max(-CORR_MAX, Math.min(CORR_MAX, s));
     return z + s;
   }
   // rows: [{z, y, v}]。返り値：補正モデル

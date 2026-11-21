@@ -1380,7 +1380,7 @@ let clearArm=0;
 $('#learnClear').addEventListener('click',()=>{
   const b=$('#learnClear');
   if(Date.now()-clearArm>4000){clearArm=Date.now();b.textContent='もう一度押すと消します';setTimeout(()=>{b.textContent='ためた材料を消す'},4000);return}
-  try{localStorage.removeItem('gb_learn')}catch(e){}clearArm=0;b.textContent='ためた材料を消す';renderLearn();
+  try{localStorage.removeItem('gb_learn');localStorage.removeItem('gb_corr')}catch(e){}TabEngine.setCorr(null,null,null);clearArm=0;b.textContent='ためた材料を消す';renderLearn();$('#learnStat').textContent='材料と学習結果を消しました（元の判定に戻りました）';if(EAR.fromRec&&REC.out&&!EAR.edited)buildFromRec();
 });
 loadCorr();
 
