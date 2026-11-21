@@ -134,6 +134,26 @@ input[type=range]{width:100%;accent-color:var(--hot);min-height:40px}
 .ref b{display:block;font-size:19px}
 .ref.on{background:var(--sel);color:#1a0f0a;border-color:var(--sel)}
 .ear .set{margin-top:12px;margin-bottom:0}
+.seg.full{display:flex;width:100%;margin-bottom:10px}.seg.full button{flex:1}
+.kind{display:inline-block;font-size:12px;font-weight:700;padding:3px 12px;border-radius:10px;background:#3a2c22;color:var(--mute)}
+.kind.n{background:var(--sel);color:#1a0f0a}.kind.c{background:var(--oct);color:#062019}.kind.p{background:var(--hot);color:#1a0f0a}.kind.h{background:#c9a7ff;color:#1a0f0a}
+.chip.best{background:var(--sel);color:#1a0f0a;border-color:var(--sel)}
+.lvl{position:relative;height:10px;border-radius:5px;background:#3a2c22;margin-top:16px;overflow:hidden}
+.lvlbar{height:100%;width:0;background:#6b5444;transition:width .05s linear}
+.lvlbar.hot{background:var(--oct)}
+.lvlthr{position:absolute;top:0;bottom:0;width:2px;background:var(--ink)}
+.tabv{display:flex;overflow-x:auto;background:var(--panel);border:1px solid #33261d;border-radius:14px;padding:8px 6px;min-height:60px}
+.tabv:empty::before{content:"まだありません";color:#6d5a4b;font-size:14px;padding:6px}
+.tlabels,.tcol{flex:none;display:grid;grid-template-rows:30px repeat(6,24px)}
+.tlabels>div{font-size:11px;color:var(--mute)}
+.tcol{min-width:36px;border:0;border-radius:8px;background:none;padding:0;color:var(--ink)}
+.tcol.on{background:rgba(255,209,102,.14)}
+.tcol>div,.tlabels>div{position:relative;display:flex;align-items:center;justify-content:center}
+.ln::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:#6b5444}
+.ln span{position:relative;background:var(--panel);padding:0 3px;font-size:14px;font-weight:900;line-height:1}
+.tcol.on .ln span{background:#3a3222}
+.tc{font-size:12px;color:var(--oct);white-space:nowrap;padding:0 3px}
+.tp{font-size:12px;color:var(--hot)}
 .hhead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:18px}
 .hhead h3{margin:0}
 .hhead div{display:flex;gap:6px}
@@ -161,6 +181,7 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
   <label class="set"><span class="lab">チューニング</span><select id="preset"></select></label>
   <div id="customBox" class="custom" hidden></div>
   <label class="set"><span class="lab">カポ</span><select id="capo"></select></label>
+  <label class="set"><span class="lab">基準ピッチ</span><select id="a4"></select></label>
   <p class="hint">カポ：フレットをはさんで、全部の弦の音を上げる道具。指板では、カポより手前を暗く表示します。</p>
 </section>
 
@@ -241,19 +262,25 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
 
   <!-- 耳コピ -->
   <section id="tab-ear" class="tab" hidden>
+    <div class="seg full" id="earMode"><button data-v="auto">自動</button><button data-v="note">単音だけ</button><button data-v="chord">コードだけ</button></div>
     <div class="card ear">
+      <span id="earKind" class="kind">待機中</span>
       <div id="earNote" class="tnote idle">—</div>
-      <div id="earLab" class="tlab">マイクを開始して、1音ずつ弾いてください</div>
+      <div id="earLab" class="tlab">マイクを開始して、弾いてみてください</div>
       <div id="earPos" class="chips" style="justify-content:center"></div>
+      <div class="lvl" aria-hidden="true"><div id="earLvl" class="lvlbar"></div><div id="earThr" class="lvlthr"></div></div>
+      <label class="set"><span class="lab">感度</span><input type="range" id="earSens" min="0" max="100"></label>
+      <label class="chk"><input type="checkbox" id="earPerc"> ボディを叩く音（打音）も記録する</label>
       <button id="earBtn" class="btn pri wide">マイクを開始</button>
       <p id="earErr" class="err"></p>
-      <label class="set"><span class="lab">感度</span><input type="range" id="earSens" min="0" max="100"></label>
     </div>
-    <div class="hhead"><h3>弾いた音の履歴</h3>
+    <p class="hint">金色の候補が「おすすめの場所」です（前の音から手の移動が少ない場所）。バーは入ってくる音の大きさで、白い線より右に来た音だけを拾います。</p>
+    <div class="hhead"><h3>TAB譜（弾いた順）</h3>
       <div><button id="earPlay" class="btn small">再生</button><button id="earUndo" class="btn small">1つ消す</button><button id="earClear" class="btn small">全部消す</button></div>
     </div>
-    <div id="earHist" class="chips hist"></div>
-    <p class="hint">場所のボタンを押すと、指板タブで同じ音の場所を確認できます。曲を流して聞かせるのは苦手です（声やドラムが混ざるため）。自分で1音ずつはっきり弾いてください。</p>
+    <div id="earTab" class="tabv"></div>
+    <label class="chk"><input type="checkbox" id="earRhythm"> 再生をリズムどおりにする</label>
+    <p class="hint">TAB譜：横線が弦（上が1弦）、数字が押さえるフレット、&lt;12&gt;はハーモニクスです。手の移動が一番少なくなるように、全体で並びを計算しています。列をタップすると、その音を鳴らして詳しく表示します。曲を流して聞かせるのは苦手なので、自分で弾いた音で使ってください。</p>
   </section>
 </main>
 
@@ -292,6 +319,7 @@ const S={
   capo:store.get('capo',0),oct:store.get('oct',true),all:store.get('all',false),ch:store.get('ch',0),sel:null
 };
 if(!PRESETS[S.preset])S.preset='std';
+let A4=store.get('a4',440);
 let selPos=null;
 function save(){for(const k of ['nota','preset','custom','capo','oct','all','ch'])store.set(k,S[k])}
 
@@ -317,7 +345,7 @@ const bufCache=new Map();
 // カープラス・ストロング法：ノイズを短く繰り返して、弦をはじいた音を作る
 function pluckBuf(m){
   if(bufCache.has(m))return bufCache.get(m);
-  const a=ctx(),sr=a.sampleRate,f=440*2**((m-69)/12),dur=2.4,len=Math.floor(sr*dur);
+  const a=ctx(),sr=a.sampleRate,f=A4*2**((m-69)/12),dur=2.4,len=Math.floor(sr*dur);
   const b=a.createBuffer(1,len,sr),y=b.getChannelData(0);
   const D=sr/f-0.5,N=Math.ceil(D)+2;
   for(let i=0;i<N;i++)y[i]=Math.random()*2-1;
@@ -365,10 +393,13 @@ $('#preset').addEventListener('change',e=>{
   const v=e.target.value;if(v==='custom')S.custom=[...tuning()];S.preset=v;refresh();
 });
 $('#capo').addEventListener('change',e=>{S.capo=+e.target.value;refresh()});
+$('#a4').innerHTML=Array.from({length:21},(_,i)=>430+i).map(v=>`<option value="${v}">A4＝${v}Hz${v===440?'（標準）':''}</option>`).join('');
+$('#a4').value=String(A4);
+$('#a4').addEventListener('change',e=>{A4=+e.target.value;store.set('a4',A4);bufCache.clear();refresh()});
 $('#customBox').addEventListener('change',e=>{const sel=e.target.closest('select');if(!sel)return;S.custom[+sel.dataset.s]=+sel.value;refresh()});
 function refresh(){
   if(selPos){if(playable(selPos.f))S.sel=pitchAt(selPos.s,selPos.f);else{selPos=null;S.sel=null}}
-  save();renderStatus();renderSettings();renderBoard();renderChord();renderRefs();renderEarHist();
+  save();renderStatus();renderSettings();renderBoard();renderChord();renderRefs();renderEarAll();
 }
 
 /* ---------- 指板 ---------- */
@@ -549,8 +580,8 @@ async function micStart(cb,err){
     const a=ctx();
     MIC.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     const src=a.createMediaStreamSource(MIC.stream);
-    MIC.an=a.createAnalyser();MIC.an.fftSize=4096;src.connect(MIC.an);
-    MIC.buf=new Float32Array(MIC.an.fftSize);MIC.cb=cb;MIC.last=0;
+    MIC.an=a.createAnalyser();MIC.an.fftSize=8192;MIC.an.smoothingTimeConstant=0;src.connect(MIC.an);
+    MIC.buf=new Float32Array(MIC.an.fftSize);MIC.fbuf=new Float32Array(MIC.an.frequencyBinCount);MIC.cb=cb;MIC.last=0;
     MIC.raf=requestAnimationFrame(micLoop);
     return true;
   }catch(e){
@@ -562,14 +593,14 @@ function micStop(){
   cancelAnimationFrame(MIC.raf);MIC.cb=null;MIC.owner=null;
   if(MIC.stream){MIC.stream.getTracks().forEach(t=>t.stop());MIC.stream=null;MIC.an=null}
   for(const id of ['#tuBtn','#earBtn']){$(id).textContent='マイクを開始';$(id).classList.add('pri')}
+  $('#earLvl').style.width='0';
   tuIdle();
 }
 function micLoop(ts){
   MIC.raf=requestAnimationFrame(micLoop);
-  if(!MIC.an||ts-MIC.last<45)return;MIC.last=ts;
-  MIC.an.getFloatTimeDomainData(MIC.buf);
-  const r=detect(MIC.buf,ac.sampleRate);
-  if(MIC.cb)MIC.cb(r);
+  if(!MIC.an||ts-MIC.last<28)return;MIC.last=ts;
+  MIC.an.getFloatTimeDomainData(MIC.buf);MIC.an.getFloatFrequencyData(MIC.fbuf);
+  if(MIC.cb)MIC.cb({time:MIC.buf,freq:MIC.fbuf,sr:ac.sampleRate,now:ts});
 }
 // 音の高さを調べる（正規化した自己相関。オクターブの間違いを減らすため、最初の大きな山を選ぶ）
 function detect(b,sr){
@@ -605,10 +636,11 @@ function tuIdle(){
   $('#tuLab').textContent=MIC.owner==='tu'?'弦を1本鳴らしてください':'マイクを開始して、弦を1本ずつ鳴らしてください';
   document.querySelectorAll('.ref').forEach(r=>r.classList.remove('on'));
 }
+function tunerFrame(fr){tunerUpdate(detect(fr.time,fr.sr))}
 function tunerUpdate(r){
   if(!r.f){if(++TU.silent>10){TU.hist=[];if(TU.silent===11)tuIdle()}return}
   TU.silent=0;TU.hist.push(r.f);if(TU.hist.length>5)TU.hist.shift();
-  const f=median(TU.hist),mf=69+12*Math.log2(f/440);
+  const f=median(TU.hist),mf=69+12*Math.log2(f/A4);
   let target,lab,bs=-1;
   if(TU.mode==='str'){
     const t=tuning();let bd=1e9;t.forEach((m,s)=>{const d=Math.abs(mf-m);if(d<bd){bd=d;bs=s}});
@@ -632,42 +664,224 @@ async function toggleMic(which){
   const btn=$(which==='tu'?'#tuBtn':'#earBtn'),err=$(which==='tu'?'#tuErr':'#earErr');
   if(MIC.owner===which){micStop();return}
   micStop();err.textContent='';
-  const ok=await micStart(which==='tu'?tunerUpdate:earUpdate,err);
-  if(ok){MIC.owner=which;btn.textContent='止める';btn.classList.remove('pri');if(which==='tu')tuIdle();else earIdle()}
+  const ok=await micStart(which==='tu'?tunerFrame:earFrame,err);
+  if(ok){MIC.owner=which;btn.textContent='止める';btn.classList.remove('pri');if(which==='tu')tuIdle();else earReset()}
 }
 $('#tuBtn').addEventListener('click',()=>toggleMic('tu'));
 
 /* ---------- 耳コピ ---------- */
-const EAR={hist:store.get('earHist',[]),cand:null,cnt:0,silent:99,gap:true,cur:null,sens:store.get('earSens',60)};
+function migrate(h){return (Array.isArray(h)?h:[]).map(x=>typeof x==='number'?{k:'n',m:x,t:0}:x).filter(x=>x&&x.k)}
+const EAR={hist:migrate(store.get('earHist',[])),mode:store.get('earMode','auto'),perc:store.get('earPerc',true),rhythm:store.get('earRhythm',true),sens:store.get('earSens',60),
+  st:'idle',ev:null,envs:[],fluxAvg:0.05,prev:null,lastOn:0,cur:null,legM:null,legN:0,sel:-1};
+EAR.sel=EAR.hist.length-1;
 const earThr=()=>0.05*Math.pow(1-EAR.sens/100,2)+0.003;
-function earIdle(){$('#earNote').className='tnote idle';$('#earNote').textContent='—';$('#earLab').textContent=MIC.owner==='ear'?'1音ずつ弾いてください':'マイクを開始して、1音ずつ弾いてください';$('#earPos').innerHTML=''}
-function earUpdate(r){
-  if(!r.f||r.rms<earThr()){EAR.cnt=0;if(++EAR.silent>=4)EAR.gap=true;if(EAR.silent===12)$('#earNote').classList.add('idle');return}
-  EAR.silent=0;
-  const mf=69+12*Math.log2(r.f/440),m=Math.round(mf),cents=Math.round((mf-m)*100);
-  if(m<33||m>90)return;
-  if(m===EAR.cand)EAR.cnt++;else{EAR.cand=m;EAR.cnt=1}
-  if(EAR.cnt===3){
-    if(m!==EAR.cur||EAR.gap){EAR.hist.push(m);if(EAR.hist.length>80)EAR.hist.shift();store.set('earHist',EAR.hist);renderEarHist()}
-    EAR.cur=m;EAR.gap=false;renderEarNow(m,cents);
-  }else if(EAR.cnt>3&&m===EAR.cur)renderEarNow(m,cents);
+const lvlPct=v=>Math.max(0,Math.min(100,(20*Math.log10(v+1e-9)+60)/55*100));
+function saveHist(){if(EAR.hist.length>150)EAR.hist.splice(0,EAR.hist.length-150);store.set('earHist',EAR.hist)}
+function earReset(){EAR.st='idle';EAR.ev=null;EAR.prev=null;EAR.envs=[];renderEarNow(EAR.sel)}
+
+// スペクトル（周波数ごとの音の強さ）を扱う道具
+function mags(fr){const N=fr.freq.length,binHz=fr.sr/(2*N),K=Math.min(N-2,Math.floor(4000/binHz)),m=new Float32Array(K+2);for(let k=0;k<=K+1;k++)m[k]=Math.pow(10,fr.freq[k]/20);return{m,binHz,K}}
+function fluxOf(sp){const p=EAR.prev;EAR.prev=sp.m;if(!p||p.length!==sp.m.length)return 0;let pos=0,tot=0;for(let k=2;k<=sp.K;k++){const d=sp.m[k]-p[k];if(d>0)pos+=d;tot+=sp.m[k]}return tot?pos/tot:0}
+function centroid(sp){let a=0,b=0;const k0=Math.max(1,Math.floor(40/sp.binHz));for(let k=k0;k<=sp.K;k++){a+=k*sp.binHz*sp.m[k];b+=sp.m[k]}return b?a/b:0}
+function purity(sp,f){const e=h=>{const k=Math.round(h*f/sp.binHz);if(k<2||k>sp.K)return 0;return Math.max(sp.m[k-1],sp.m[k],sp.m[k+1])};const e1=e(1);let o=0;for(let h=2;h<=5;h++){const v=e(h);o+=v*v}return e1?e1*e1/(e1*e1+o):0}
+// 鳴っている音を12の音名に振り分ける（コード判定用）
+function addChroma(sp,ch){
+  const k0=Math.ceil(70/sp.binHz),k1=Math.min(sp.K,Math.floor(1600/sp.binHz));let mx=0;
+  for(let k=k0;k<=k1;k++)if(sp.m[k]>mx)mx=sp.m[k];if(!mx)return;
+  const fl=mx*0.06,pk=[];let bass=-1;
+  for(let k=k0;k<=k1;k++){
+    const v=sp.m[k];if(v<fl||v<sp.m[k-1]||v<sp.m[k+1])continue;
+    const a=sp.m[k-1],c=sp.m[k+1],d=a-2*v+c,sh=d?0.5*(a-c)/d:0;pk.push({f:(k+sh)*sp.binHz,v});
+  }
+  for(const p of pk){
+    const mf=69+12*Math.log2(p.f/A4),r=Math.round(mf);if(Math.abs(mf-r)>0.35)continue;
+    // 低い音の倍音（3・5・6・7倍）と思われるピークは弱める。鳴っていない音を拾わないため
+    let w=p.v/mx*(p.f<250?1.3:p.f<400?1:Math.sqrt(400/p.f));
+    for(const q of pk){if(q.f>=p.f*0.9)break;if(q.v<p.v*0.2)continue;const h=p.f/q.f,n=Math.round(h);if(n>=3&&n<=7&&n!==4&&Math.abs(h-n)<n*0.015){w*=0.3;break}}
+    ch.c[pc(r)]+=w;
+    if(bass<0&&p.f<330&&p.v>mx*0.12)bass=pc(r);
+  }
+  if(bass>=0)ch.b[bass]+=1;
 }
-function renderEarNow(m,cents){
-  $('#earNote').className='tnote';$('#earNote').innerHTML=full(m);
-  $('#earLab').textContent=`${EN[pc(m)]}${oc(m)}・ズレ ${cents>0?'+':''}${cents}セント`;
-  $('#earPos').innerHTML=positions(m).map(p=>`<button class="chip" data-s="${p.s}" data-f="${p.f}">${p.s+1}弦 ${fretShort(p.f)}</button>`).join('')||'<span class="sub">今の設定では指板の範囲外の音です</span>';
+const CTYPES=[['',[0,4,7],0],['m',[0,3,7],0],['7',[0,4,7,10],.03],['m7',[0,3,7,10],.03],['maj7',[0,4,7,11],.04],['sus4',[0,5,7],.03],['sus2',[0,2,7],.03],['add9',[0,2,4,7],.04],['dim',[0,3,6],.05],['5',[0,7],.06]];
+function matchChord(ch){
+  const c=ch.c;let n=0;for(const v of c)n+=v*v;n=Math.sqrt(n);if(!n)return[];
+  const bm=Math.max(...ch.b),bass=bm>0?ch.b.indexOf(bm):-1,res=[];
+  for(let r=0;r<12;r++)for(const [suf,iv,pen] of CTYPES){
+    let dot=0,tn=0;iv.forEach((x,i)=>{const w=i===0?1:0.85;dot+=c[pc(r+x)]*w;tn+=w*w});
+    res.push({name:EN[r]+suf,r,iv,s:dot/(n*Math.sqrt(tn))-pen+(r===bass?0.08:0)});
+  }
+  res.sort((a,b)=>b.s-a.s);return res.slice(0,3);
 }
-function renderEarHist(){
-  $('#earHist').innerHTML=EAR.hist.map((m,i)=>`<button class="chip" data-i="${i}">${nm(m)}<small>${oc(m)}</small></button>`).join('');
+// 弾ける場所の候補（ハーモニクスも含む）と、手の動きのコスト
+const HARM=[[12,12],[7,19],[5,24],[19,19],[4,28],[9,28]];
+function cands(m){
+  const t=tuning(),r=[];
+  for(let s=5;s>=0;s--){
+    for(let f=0;f<=FRETS;f++)if(playable(f)&&pitchAt(s,f)===m)r.push({s,f,h:false});
+    for(const [fr,add] of HARM){const f=S.capo+fr;if(f<=19&&t[s]+S.capo+add===m)r.push({s,f,h:true})}
+  }
+  return r;
 }
+function posCost(p,harm){return (p.f===0?0:0.12*(p.f-S.capo))+(p.h?(harm?-0.6:3):0)}
+function moveCost(a,b){
+  if(!a)return 0;
+  const af=a.f===0||a.h?null:a.f,bf=b.f===0||b.h?null:b.f;let c=0.25*Math.abs(a.s-b.s);
+  if(af!=null&&bf!=null)c+=0.5*Math.max(0,Math.abs(af-bf)-1);else if(bf!=null)c+=0.2;
+  return c;
+}
+// フレーズ全体で手の移動が一番少ない並びを計算（動的計画法）
+function tabPath(){
+  const H=EAR.hist,out=new Array(H.length).fill(null),layers=[];let prev=null;
+  H.forEach((e,i)=>{
+    if(e.k!=='n')return;const cs=cands(e.m);if(!cs.length)return;
+    const L=cs.map(p=>{let best=0,bk=-1;if(prev){best=Infinity;prev.forEach((q,j)=>{const v=q.cost+moveCost(q.p,p);if(v<best){best=v;bk=j}})}return{p,cost:best+posCost(p,e.h),bk}});
+    layers.push({i,L});prev=L;
+  });
+  if(!layers.length)return out;
+  let L=layers[layers.length-1].L,j=0;L.forEach((x,k)=>{if(x.cost<L[j].cost)j=k});
+  for(let li=layers.length-1;li>=0;li--){const ly=layers[li];out[ly.i]=ly.L[j].p;j=ly.L[j].bk}
+  return out;
+}
+
+// 1フレームごとの処理：音の出だしを見つけて、約0.23秒聞いてから「単音・コード・打音」を判定
+function earFrame(fr){
+  const thr=earThr(),now=fr.now,tb=fr.time;
+  let e=0;for(let i=tb.length-1024;i<tb.length;i++)e+=tb[i]*tb[i];const env=Math.sqrt(e/1024);
+  const sp=mags(fr),flux=fluxOf(sp);
+  const lv=$('#earLvl');lv.style.width=lvlPct(env)+'%';lv.classList.toggle('hot',env>thr);
+  const minEnv=EAR.envs.length?Math.min(...EAR.envs):0;EAR.envs.push(env);if(EAR.envs.length>4)EAR.envs.shift();
+  const onset=env>thr&&now-EAR.lastOn>90&&(env>1.7*minEnv||flux>Math.max(0.35,3*EAR.fluxAvg));
+  EAR.fluxAvg=0.92*EAR.fluxAvg+0.08*Math.min(flux,1);
+  // ジャカジャーンと鳴らした時、6本分の出だしを1回にまとめる（0.2秒以内は同じ音として扱う）
+  const busy=EAR.st==='collect'&&now-EAR.ev.t0<200;
+  if(onset&&!busy){
+    if(EAR.st==='collect')finalize();
+    EAR.lastOn=now;EAR.st='collect';
+    EAR.ev={t0:now,peak:env,envs:[env],ps:[],pur:[],ch:{c:new Float32Array(12),b:new Float32Array(12)},cent:centroid(sp)};
+    return;
+  }
+  if(EAR.st==='collect'){
+    const ev=EAR.ev,age=now-ev.t0;ev.envs.push(env);
+    if(env>ev.peak){ev.peak=env;ev.cent=centroid(sp)}
+    if(age>=35){const r=detect(tb,fr.sr);if(r.f){ev.ps.push({f:r.f,c:r.clarity});ev.pur.push(purity(sp,r.f))}}
+    if(age>=50)addChroma(sp,ev.ch);
+    if(age>=230)finalize();
+    return;
+  }
+  if(EAR.st==='note'){
+    if(env<thr*0.6){EAR.st='idle';return}
+    // ハンマリングやスライドなど、弾き直さずに音が変わった場合
+    const r=detect(tb,fr.sr);
+    if(r.f&&r.clarity>0.9){
+      const m=Math.round(69+12*Math.log2(r.f/A4));
+      if(m!==EAR.cur&&m>=33&&m<=90){if(m===EAR.legM)EAR.legN++;else{EAR.legM=m;EAR.legN=1}if(EAR.legN>=4){pushNote(m,false,now,null);EAR.legN=0}}
+      else EAR.legN=0;
+    }
+    return;
+  }
+  if(EAR.st==='chord'&&env<thr*0.6)EAR.st='idle';
+}
+function finalize(){
+  const ev=EAR.ev;EAR.ev=null;EAR.st='idle';if(!ev)return;
+  const decay=ev.envs[ev.envs.length-1]/ev.peak,ps=ev.ps,clar=ps.length?median(ps.map(p=>p.c)):0;
+  const semis=ps.map(p=>69+12*Math.log2(p.f/A4)),med=semis.length?median(semis):0;
+  const stable=semis.length>=2&&semis.filter(x=>Math.abs(x-med)<0.4).length>=semis.length*0.7;
+  // 打音：すぐ消えて、音程がはっきりしない音
+  if(EAR.perc&&ev.envs.length>=5&&(decay<0.2||(decay<0.3&&clar<0.85))){pushPerc(ev.cent<700,ev.t0);return}
+  if(EAR.mode==='note'||(EAR.mode==='auto'&&clar>=0.88&&stable)){
+    if(!semis.length)return;const m=Math.round(med);if(m<33||m>90)return;
+    const pur=ev.pur.length?median(ev.pur):0,harm=pur>0.8&&cands(m).some(p=>p.h);
+    pushNote(m,harm,ev.t0,Math.round((med-m)*100));return;
+  }
+  const top=matchChord(ev.ch);
+  if(top.length&&top[0].s>0.62){pushChord(top,ev.t0,ev.ch);return}
+  if(EAR.mode==='auto'&&stable){const m=Math.round(med);if(m>=33&&m<=90)pushNote(m,false,ev.t0,Math.round((med-m)*100))}
+}
+function pushNote(m,h,t,c){EAR.hist.push({k:'n',m,h,c,t:Math.round(t)});EAR.cur=m;EAR.st='note';EAR.legM=null;afterPush()}
+function pushChord(top,t,ch){const b=top[0];EAR.hist.push({k:'c',name:b.name,r:b.r,iv:b.iv,alts:top.map(x=>[x.name,Math.max(0,Math.min(99,Math.round(x.s*100)))]),t:Math.round(t)});EAR.cur=null;EAR.st='chord';afterPush()}
+function pushPerc(lo,t){EAR.hist.push({k:'p',lo,t:Math.round(t)});EAR.cur=null;EAR.st='idle';afterPush()}
+function afterPush(){saveHist();EAR.sel=EAR.hist.length-1;renderEarAll()}
+
+/* 表示 */
+function renderEarAll(){renderEarNow(EAR.sel);renderTab();$('#earThr').style.left=lvlPct(earThr())+'%'}
+function renderEarNow(i){
+  const e=EAR.hist[i],K=$('#earKind'),N=$('#earNote'),L=$('#earLab'),P=$('#earPos');
+  if(!e){K.className='kind';K.textContent='待機中';N.className='tnote idle';N.textContent='—';L.textContent=MIC.owner==='ear'?'弾いてみてください':'マイクを開始して、弾いてみてください';P.innerHTML='';return}
+  N.className='tnote';
+  if(e.k==='n'){
+    K.className='kind '+(e.h?'h':'n');K.textContent=e.h?'単音（ハーモニクスかも）':'単音';
+    N.innerHTML=full(e.m);
+    L.textContent=`${EN[pc(e.m)]}${oc(e.m)}${e.c!=null?`・ズレ ${e.c>0?'+':''}${e.c}セント`:''}`;
+    const path=tabPath();let prev=null;for(let j=i-1;j>=0;j--)if(path[j]){prev=path[j];break}
+    const ch=path[i],cs=cands(e.m).map(p=>({p,v:posCost(p,e.h)+moveCost(prev,p)})).sort((a,b)=>a.v-b.v);
+    P.innerHTML=cs.length?cs.map(({p})=>`<button class="chip${ch&&p.s===ch.s&&p.f===ch.f&&p.h===ch.h?' best':''}" data-s="${p.s}" data-f="${p.f}" data-h="${p.h?1:0}">${p.s+1}弦 ${p.h?p.f+'F ハーモニクス':fretShort(p.f)}</button>`).join(''):'<span class="sub">今の設定では、指板の範囲外の音です</span>';
+  }else if(e.k==='c'){
+    K.className='kind c';K.textContent='コード';N.textContent=e.name;
+    L.textContent=`ルート：${JA[e.r]}・候補 `+e.alts.map(a=>`${a[0]} ${a[1]}%`).join(' / ');
+    const k=chordShift();
+    P.innerHTML=e.alts.map(a=>{if(k===null)return'';const sh=transpose(a[0],-k),j=CH.findIndex(c=>c.n===sh);return j>=0?`<button class="chip" data-ch="${j}">${a[0]}の押さえ方${sh!==a[0]?`（${sh}の形）`:''}</button>`:''}).join('');
+  }else{
+    K.className='kind p';K.textContent='打音';N.textContent=e.lo?'ドン':'パン';
+    L.textContent=e.lo?'低い打音（ボディの低い所を叩く音など）':'高い打音（弦や縁を叩く音など）';P.innerHTML='';
+  }
+}
+function renderTab(){
+  const H=EAR.hist,el=$('#earTab');if(!H.length){el.innerHTML='';return}
+  const path=tabPath(),k=chordShift();
+  let h='<div class="tlabels"><div></div>'+[1,2,3,4,5,6].map(s=>`<div class="ln"><span>${s}</span></div>`).join('')+'</div>';
+  H.forEach((e,i)=>{
+    const p=path[i];let top='',cc=null;
+    if(e.k==='c'){top=`<b class="tc">${e.name}</b>`;if(k!==null)cc=CH.find(c=>c.n===transpose(e.name,-k))}
+    else if(e.k==='p')top=`<b class="tp">${e.lo?'ドン':'パン'}</b>`;
+    h+=`<button class="tcol${i===EAR.sel?' on':''}" data-i="${i}" aria-label="${i+1}番目"><div>${top}</div>`;
+    for(let s=0;s<6;s++){
+      let v='';
+      if(e.k==='n'&&p&&p.s===s)v=p.h?`&lt;${p.f}&gt;`:String(p.f);
+      else if(cc){const x=cc.f[5-s];v=x==='x'?'×':String(x===0?0:x+S.capo)}
+      h+=`<div class="ln">${v?`<span>${v}</span>`:''}</div>`;
+    }
+    h+='</button>';
+  });
+  el.innerHTML=h;el.scrollLeft=el.scrollWidth;
+}
+
+/* 再生 */
+function percSound(lo,w=0){
+  try{
+    const a=ctx(),t=a.currentTime+0.02+w;
+    if(lo){const o=a.createOscillator(),g=a.createGain();o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(55,t+0.18);g.gain.setValueAtTime(0.9,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.25);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.3)}
+    else{const len=Math.floor(a.sampleRate*0.12),b=a.createBuffer(1,len,a.sampleRate),d=b.getChannelData(0);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);
+      const s=a.createBufferSource(),f=a.createBiquadFilter(),g=a.createGain();f.type='bandpass';f.frequency.value=1800;f.Q.value=0.8;g.gain.value=0.9;s.buffer=b;s.connect(f);f.connect(g);g.connect(master);s.start(t)}
+  }catch(e){}
+}
+function playEvent(e,w=0){
+  if(e.k==='n')play(e.m,w,0.55);
+  else if(e.k==='c'){const rm=40+pc(e.r-4);[rm,...e.iv.map(x=>rm+12+x)].forEach((m,i)=>play(m,w+i*0.035,0.4))}
+  else percSound(e.lo,w);
+}
+
 $('#earBtn').addEventListener('click',()=>toggleMic('ear'));
-$('#earPos').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;micStop();showTab('board');pick(+b.dataset.s,+b.dataset.f)});
-$('#earHist').addEventListener('click',e=>{const b=e.target.closest('.chip');if(b)play(EAR.hist[+b.dataset.i])});
-$('#earPlay').addEventListener('click',()=>EAR.hist.forEach((m,i)=>play(m,i*0.45,0.5)));
-$('#earUndo').addEventListener('click',()=>{EAR.hist.pop();store.set('earHist',EAR.hist);renderEarHist()});
-$('#earClear').addEventListener('click',()=>{EAR.hist=[];store.set('earHist',EAR.hist);renderEarHist()});
+$('#earPos').addEventListener('click',e=>{
+  const b=e.target.closest('.chip');if(!b)return;
+  if(b.dataset.ch!=null){micStop();S.ch=+b.dataset.ch;save();renderChord();showTab('chord');return}
+  if(b.dataset.h==='1'){const ev=EAR.hist[EAR.sel];if(ev)play(ev.m);return}
+  micStop();showTab('board');pick(+b.dataset.s,+b.dataset.f);
+});
+$('#earTab').addEventListener('click',e=>{const b=e.target.closest('.tcol');if(!b)return;EAR.sel=+b.dataset.i;renderEarNow(EAR.sel);document.querySelectorAll('.tcol').forEach(c=>c.classList.toggle('on',c===b));playEvent(EAR.hist[EAR.sel])});
+$('#earPlay').addEventListener('click',()=>{
+  const H=EAR.hist;let w=0;
+  H.forEach((e,i)=>{if(i>0)w+=EAR.rhythm&&e.t&&H[i-1].t?Math.min(1.5,Math.max(0.12,(e.t-H[i-1].t)/1000)):0.45;playEvent(e,w)});
+});
+$('#earUndo').addEventListener('click',()=>{EAR.hist.pop();saveHist();EAR.sel=EAR.hist.length-1;renderEarAll()});
+$('#earClear').addEventListener('click',()=>{EAR.hist=[];saveHist();EAR.sel=-1;renderEarAll()});
 $('#earSens').value=EAR.sens;
-$('#earSens').addEventListener('input',e=>{EAR.sens=+e.target.value;store.set('earSens',EAR.sens)});
+$('#earSens').addEventListener('input',e=>{EAR.sens=+e.target.value;store.set('earSens',EAR.sens);$('#earThr').style.left=lvlPct(earThr())+'%'});
+$('#earPerc').checked=EAR.perc;$('#earPerc').addEventListener('change',e=>{EAR.perc=e.target.checked;store.set('earPerc',EAR.perc)});
+$('#earRhythm').checked=EAR.rhythm;$('#earRhythm').addEventListener('change',e=>{EAR.rhythm=e.target.checked;store.set('earRhythm',EAR.rhythm)});
+function renderEarMode(){$('#earMode').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===EAR.mode)))}
+$('#earMode').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;EAR.mode=b.dataset.v;store.set('earMode',EAR.mode);renderEarMode()});
+renderEarMode();
 
 /* ---------- タブ ---------- */
 const TABS=['board','chord','metro','tuner','ear'];
