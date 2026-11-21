@@ -126,6 +126,7 @@
     // 材料が少ない時ほど強く抑える（少しの材料で大きく変わらないように）
     const lam = opt.l2 == null ? 0.02 * Math.max(1, 400 / Math.max(1, n)) : opt.l2;
     const pos = rows.filter(r => r.y).length, pw = Math.min(5, Math.max(1, (n - pos) / Math.max(1, pos)));
+    const mask = new Set(opt.mask || []);
     const Z = rows.map(r => r.v.map((x, i) => (x - net.mu[i]) / net.sd[i]));
     const w = new Array(d).fill(0); let a = 0, b = 0;
     const mw = new Array(d + 2).fill(0), vw = new Array(d + 2).fill(0);
@@ -134,11 +135,12 @@
       for (let k = 0; k < n; k++) {
         const r = rows[k]; let s = r.z + b + a * r.z;
         for (let i = 0; i < d; i++) s += w[i] * Z[k][i];
-        const e = (sig(s) - r.y) * (r.y ? pw : 1);
+        const e = (sig(s) - r.y) * (r.y ? pw : 1) * (r.w == null ? 1 : r.w);
         for (let i = 0; i < d; i++) g[i] += e * Z[k][i];
         g[d] += e * r.z; g[d + 1] += e;
       }
       for (let i = 0; i < d + 2; i++) {
+        if (i < d && mask.has(i)) continue;
         let gi = g[i] / n + lam * (i < d ? w[i] : i === d ? a : 0);
         mw[i] = 0.9 * mw[i] + 0.1 * gi; vw[i] = 0.999 * vw[i] + 0.001 * gi * gi;
         const step = 0.05 * (mw[i] / (1 - Math.pow(0.9, t))) / (Math.sqrt(vw[i] / (1 - Math.pow(0.999, t))) + 1e-8);
@@ -165,11 +167,17 @@
     else { tr = all.filter((r, i) => i % 4 !== 0); va = all.filter((r, i) => i % 4 === 0); }
     if (!va.some(r => r.y)) { tr = all.filter((r, i) => i % 4 !== 0); va = all.filter((r, i) => i % 4 === 0); }
     if (va.filter(r => r.y).length < 2) return { ok: false, reason: '確かめる材料が足りない（確認済みの録音を増やしてください）', npos };
-    const cm = trainCorr(tr, net);
+    // 音の高さ（13）・開放弦かどうか（21,22）は補正に使わない＝「この高さはノイズ」と覚えない
+    const mask = kind === 'perc' ? [] : [13, 21, 22];
+    const cm = trainCorr(tr, net, { mask });
     const before = f1At(va, th, null, net), after = f1At(va, th, cm, net);
+    // 安全装置：確認済みの録音すべてで、正解の音（打音）がどれだけ残るか。減るなら採用しない
+    const allB = f1At(all, th, null, net), allA = f1At(all, th, cm, net);
+    const recB = allB.tp / Math.max(1, allB.tp + allB.fn), recA = allA.tp / Math.max(1, allA.tp + allA.fn);
+    if (recA < recB - 0.03) return { ok: false, reason: `本物の${kind === 'perc' ? '打音' : '音'}が減ってしまうので採用しません（${Math.round(recB * 100)}%→${Math.round(recA * 100)}%）`, npos };
     // 確かめ用の分で、はっきり良くなった時だけ採用
     const ok = after.f1 > before.f1 + 0.005 || (after.f1 >= before.f1 && after.fp + after.fn < before.fp + before.fn);
-    return { ok, model: ok ? trainCorr(all, net) : null, before: before.f1, after: after.f1, npos, n: all.length };
+    return { ok, model: ok ? trainCorr(all, net, { mask }) : null, before: before.f1, after: after.f1, npos, n: all.length };
   }
   // 学習前の仮の判定（重みがない時）
   function fallbackNote(f) { return sig(9 * (f[0] - 0.45) + 1.2 * f[4] - 2.5 * Math.max(0, f[7]) - 1.5 * Math.max(0, f[9])); }
@@ -447,7 +455,7 @@
   }
 
   // 修正し終わったTAB譜（hist）を正解として、学習用の行を作る
-  function learnRows(res, hist) {
+  function learnRows(res, hist, ring) {
     const r3 = v => v.map(x => Math.round(x * 1000) / 1000);
     const note = [], perc = [];
     const cs = (res.cands || []).filter(c => c.v).map(c => ({ c, t: c.time - 0.009 }));
@@ -461,7 +469,12 @@
         if (best) usedC.add(best);
       }
     }
-    for (const o of cs) { const y = usedC.has(o) ? 1 : 0; if (y || o.c.p > 0.03) note.push({ z: Math.round(o.c.z * 1000) / 1000, y, v: r3(o.c.v) }); }
+    // 響きの拾い直しとして消した候補は、弱め（0.4）に「音ではない」と覚える
+    const isRing = o => (ring || []).some(q => q.m === o.c.m && Math.abs(q.t / 1000 - o.t) < 0.06);
+    for (const o of cs) {
+      const y = usedC.has(o) ? 1 : 0;
+      if (y || o.c.p > 0.03) { const row = { z: Math.round(o.c.z * 1000) / 1000, y, v: r3(o.c.v) }; if (!y && isRing(o)) row.w = 0.4; note.push(row); }
+    }
     const ps = res.percCands || [], usedP = new Set();
     for (const e of hist) {
       if (e.k !== 'p') continue; const et = e.t / 1000; let best = -1, bd = 0.05;

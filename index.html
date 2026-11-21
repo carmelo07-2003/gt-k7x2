@@ -363,7 +363,7 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
       <div class="row2" style="margin-top:8px"><button id="learnExport" class="btn small">学習データを書き出す</button><button id="learnImport" class="btn small">読み込む</button></div>
       <input type="file" id="learnFile" accept=".json,application/json" hidden>
       <p class="sub" id="learnIO"></p>
-      <p class="hint">使い方：①録音して解析 ②下の再生バーで聞きながら、TAB譜の列をタップして直す（列の真下に直すボタンが出ます。雑音は「消す」＝ノイズとして覚えます。拾われなかった音は、再生を止めた位置で「＋足す」） ③「確認済み」 ④何本か確認したら「学習する」。直さなかった所は「合っていた」として覚えます。確認済みの録音は一覧から1本ずつ消せて、直し直したら同じボタンで上書きできます。学習は元の判定器に「補正」を足すだけで、良くならなければ採用しません。</p>
+      <p class="hint">使い方：①録音して解析 ②下の再生バーで聞きながら、TAB譜の列をタップして直す（列の真下に直すボタンが出ます。雑音は「消す（ノイズ）」、前に弾いた音が響いている途中で同じ音が出てきたら「前の音の響き（消す）」で直します。拾われなかった音は、再生を止めた位置で「＋足す」） ③「確認済み」 ④何本か確認したら「学習する」。直さなかった所は「合っていた」として覚えます。確認済みの録音は一覧から1本ずつ消せて、直し直したら同じボタンで上書きできます。学習は元の判定器に「補正」を足すだけで、良くならなければ採用しません。</p>
     </div>
     <p class="hint">TAB譜：横線が弦（上が1弦）、数字が押さえるフレット、&lt;12&gt;はハーモニクスです。手の移動が少なくなるように、全体で並びを計算しています。録音を再生すると、今鳴っている列が光って譜面が追いかけます（列をタップすると、録音のその位置へ移動）。最後の録音はスマホに保存されるので、ページを開き直しても続きから直せます。曲を流して聞かせるのは苦手なので、自分で弾いた音で使ってください。<br>AI解析：Spotify「Basic Pitch」（Apache-2.0）の結果を、ギター用に学習させた判定器で選び直しています（倍音や響きの拾い直しを除き、弦の物理を使ってTAB譜を決めます）。解析はすべてスマホの中で行います。</p>
   </section>
@@ -1013,7 +1013,7 @@ function buildFromRec(){
   if(!REC.out||!window.TabEngine)return;
   const style=$('#recStyle').value,sens=+$('#recSens').value,percSens=+$('#recPercSens').value;
   const res=TabEngine.transcribe(REC.out,REC.x22,{tuning:tuning(),capo:S.capo,sens,perc:EAR.perc,percSens,harmPref:EAR.harmPref,keepCands:true});REC.mode=EAR.harmPref?'harm':'note';
-  REC.res=res;REC.confirmed=false;EAR.edited=false;if(REC.lastRaw!==REC.raw){REC.learnId=null;REC.lastRaw=REC.raw}else if(REC.learnId)REC.confirmed=loadLearn().some(r=>r.id===REC.learnId);
+  REC.res=res;REC.confirmed=false;EAR.edited=false;EAR.ring=[];saveRing();if(REC.lastRaw!==REC.raw){REC.learnId=null;REC.lastRaw=REC.raw}else if(REC.learnId)REC.confirmed=loadLearn().some(r=>r.id===REC.learnId);
   const ev=TabEngine.groupEvents(res,{style});
   for(const e of ev){
     if(e.k==='n')e.h=EAR.harmPref&&hasHarm(e.m)&&!tuning().some(o=>o+S.capo===e.m);
@@ -1117,7 +1117,8 @@ $('#earPos').addEventListener('click',e=>{
 });
 // 間違いを直すボタン
 function fixButtons(e){
-  let h='<div class="fixrow"><span class="lab">間違いを直す</span><button class="chip warn" data-act="del">消す</button>';
+  let h='<div class="fixrow"><span class="lab">間違いを直す</span><button class="chip warn" data-act="del">消す（ノイズ）</button>';
+  if(e.k==='n')h+='<button class="chip warn" data-act="ring">前の音の響き（消す）</button>';
   if(e.k!=='p')h+='<button class="chip" data-act="toLo">打音（ドン）にする</button><button class="chip" data-act="toHi">打音（パン）にする</button>';
   if(e.k==='p')h+='<button class="chip" data-act="toNote">音だった（音にする）</button>';
   if(e.k==='g')h+='</div><div class="fixrow"><span class="lab">この中の1音だけ消す</span>'+e.ms.map(m=>`<button class="chip" data-act="gdel" data-m="${m}">× ${nm(m)}${oc(m)}</button>`).join('');
@@ -1125,13 +1126,16 @@ function fixButtons(e){
   return h+'</div>';
 }
 const UNDO=[];
-function snap(){UNDO.push(JSON.stringify(EAR.hist));if(UNDO.length>40)UNDO.shift()}
+EAR.ring=store.get('earRing',[]);
+const saveRing=()=>store.set('earRing',EAR.ring);
+function snap(){UNDO.push(JSON.stringify({h:EAR.hist,r:EAR.ring}));if(UNDO.length>40)UNDO.shift()}
 function edited(){EAR.edited=true;EAR.path=null;saveHist();renderEarAll()}
 function onFix(e){
   const b=e.target.closest('.chip');if(!b)return;const ev=EAR.hist[EAR.sel];
   const fa=b.dataset.act;
   if(ev&&['del','toLo','toHi','setN','gdel','perc','harm','auto'].includes(fa))snap();
   if(ev&&fa&&/^p-?\d+$/.test(fa))snap();
+  if(ev&&fa==='ring'&&ev.k==='n'){snap();EAR.ring.push({m:ev.m,t:ev.t});saveRing();EAR.hist.splice(EAR.sel,1);EAR.sel=Math.min(EAR.sel,EAR.hist.length-1);edited();return}
   if(ev&&fa==='del'){EAR.hist.splice(EAR.sel,1);EAR.sel=Math.min(EAR.sel,EAR.hist.length-1);edited();return}
   if(ev&&(fa==='toLo'||fa==='toHi')){EAR.hist[EAR.sel]={k:'p',lo:fa==='toLo',t:ev.t};edited();return}
   // 打音を「音」に直す：その時刻にAIが反応した高さと、開放弦の高さから選ぶ
@@ -1226,7 +1230,7 @@ function renderLearn(){
 }
 $('#learnConfirm').addEventListener('click',()=>{
   if(!(EAR.fromRec&&REC.res))return;
-  const rows=TabEngine.learnRows(REC.res,EAR.hist);const L=loadLearn();
+  const rows=TabEngine.learnRows(REC.res,EAR.hist,EAR.ring);const L=loadLearn();
   const item={id:REC.learnId||('r'+Date.now()),mode:REC.mode||'note',d:new Date().toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}),note:rows.note,perc:rows.perc};
   const j=L.findIndex(r=>r.id===item.id);
   if(j>=0)L[j]=item;else L.push(item);   // 同じ録音なら上書き
@@ -1338,7 +1342,7 @@ $('#earPlay').addEventListener('click',()=>{
   const H=EAR.hist;let w=0;stopTimers();$('#recAudio').pause();
   H.forEach((e,i)=>{if(i>0)w+=EAR.rhythm&&H[i-1].t!=null&&e.t>=H[i-1].t?Math.min(1.5,Math.max(0.08,(e.t-H[i-1].t)/1000)):0.45;playEvent(e,w);FOL.timers.push(setTimeout(()=>followTo(i),w*1000+20))});
 });
-$('#earUndo').addEventListener('click',()=>{if(!UNDO.length)return;EAR.hist=JSON.parse(UNDO.pop());EAR.sel=Math.min(EAR.sel,EAR.hist.length-1);edited()});
+$('#earUndo').addEventListener('click',()=>{if(!UNDO.length)return;const u=JSON.parse(UNDO.pop());EAR.hist=u.h;EAR.ring=u.r||[];saveRing();EAR.sel=Math.min(EAR.sel,EAR.hist.length-1);edited()});
 $('#earPercClear').addEventListener('click',()=>{if(!EAR.hist.some(e=>e.k==='p'))return;snap();EAR.hist=EAR.hist.filter(e=>e.k!=='p');EAR.sel=Math.min(EAR.sel,EAR.hist.length-1);edited()});
 $('#quickDel').addEventListener('change',e=>{EAR.quickDel=e.target.checked;$('#earTab').classList.toggle('qdel',EAR.quickDel)});
 let clearTabArm=0;
