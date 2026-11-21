@@ -142,7 +142,7 @@ input[type=range]{width:100%;accent-color:var(--hot);min-height:40px}
 .lvlbar{height:100%;width:0;background:#6b5444;transition:width .05s linear}
 .lvlbar.hot{background:var(--oct)}
 .lvlthr{position:absolute;top:0;bottom:0;width:2px;background:var(--ink)}
-.tabv{display:flex;overflow-x:auto;background:var(--panel);border:1px solid #33261d;border-radius:14px;padding:8px 6px;min-height:60px}
+.tabv{position:relative;display:flex;overflow-x:auto;background:var(--panel);border:1px solid #33261d;border-radius:14px;padding:8px 6px;min-height:60px}
 .tabv:empty::before{content:"まだありません";color:#6d5a4b;font-size:14px;padding:6px}
 .tlabels,.tcol{flex:none;display:grid;grid-template-rows:30px repeat(6,24px)}
 .tlabels>div{font-size:11px;color:var(--mute)}
@@ -303,7 +303,12 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
       <div id="earPos" class="chips" style="justify-content:center"></div>
       <div id="earAct" class="chips" style="justify-content:center"></div>
     </div>
-    <label class="chk"><input type="checkbox" id="earHarm"> ハーモニクスを弾いている（ハーモニクスの場所を優先する）</label>
+    <div class="card" style="margin-top:12px">
+      <div class="set"><span class="lab">使う弦</span><select id="earStrR"><option value="all">全部</option><option value="1-3">1〜3弦</option><option value="1-4">1〜4弦</option><option value="2-5">2〜5弦</option><option value="3-6">3〜6弦</option><option value="4-6">4〜6弦</option></select></div>
+      <div class="set"><span class="lab">フレット</span><select id="earFretR"><option value="all">全部</option><option value="0-4">0〜4（開放弦の近く）</option><option value="2-7">2〜7</option><option value="5-9">5〜9</option><option value="7-12">7〜12</option><option value="9-15">9〜15</option></select></div>
+      <label class="chk"><input type="checkbox" id="earHarm"> ハーモニクスを弾いている（ハーモニクスの場所を優先する）</label>
+      <p class="sub">お手本の動画で弾いている場所に合わせると、TAB譜の場所が合いやすくなります（範囲内で弾けない音だけ、範囲外の場所を使います）。カポやチューニングも、右上の「設定」で動画と同じにしてください。</p>
+    </div>
     <p class="hint">金色が「おすすめの場所」です。違う場所をタップすると、その場所に固定できます。</p>
 
     <div class="hhead"><h3>TAB譜（弾いた順）</h3>
@@ -311,7 +316,7 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
     </div>
     <div id="earTab" class="tabv"></div>
     <label class="chk"><input type="checkbox" id="earRhythm"> 再生をリズムどおりにする</label>
-    <p class="hint">TAB譜：横線が弦（上が1弦）、数字が押さえるフレット、&lt;12&gt;はハーモニクスです。手の移動が少なくなるように、全体で並びを計算しています。列をタップすると、その音を鳴らして上に詳しく表示します。録音して解析すると、TAB譜は新しく作り直されます。曲を流して聞かせるのは苦手なので、自分で弾いた音で使ってください。<br>AI解析：Spotify「Basic Pitch」（Apache-2.0）を使い、スマホの中だけで解析しています。</p>
+    <p class="hint">TAB譜：横線が弦（上が1弦）、数字が押さえるフレット、&lt;12&gt;はハーモニクスです。手の移動が少なくなるように、全体で並びを計算しています。列をタップすると、その音を鳴らして上に詳しく表示します。録音して解析すると、TAB譜は新しく作り直されます。録音を再生すると、今鳴っている列が光って譜面が追いかけます（列をタップすると、録音のその位置へ移動）。曲を流して聞かせるのは苦手なので、自分で弾いた音で使ってください。<br>AI解析：Spotify「Basic Pitch」（Apache-2.0）の結果を、ギター用に学習させた判定器で選び直しています（倍音や響きの拾い直しを除き、弦の物理を使ってTAB譜を決めます）。解析はすべてスマホの中で行います。</p>
   </section>
 </main>
 
@@ -323,6 +328,8 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
   <button role="tab" data-t="ear"><svg viewBox="0 0 24 24"><path d="M7 10a5 5 0 0 1 10 0c0 4-4 4-4 8a3 3 0 0 1-6 0"/><path d="M10 10a2 2 0 0 1 4 0"/></svg>耳コピ</button>
 </nav>
 
+<script src="engine.js"></script>
+<script src="nets.js"></script>
 <script>
 {
 const $=s=>document.querySelector(s);
@@ -705,7 +712,7 @@ $('#tuBtn').addEventListener('click',()=>toggleMic('tu'));
 
 /* ---------- 耳コピ ---------- */
 function migrate(h){return (Array.isArray(h)?h:[]).map(x=>typeof x==='number'?{k:'n',m:x,t:0}:x).filter(x=>x&&x.k)}
-const EAR={hist:migrate(store.get('earHist',[])),src:store.get('earSrc','rec'),mode:store.get('earMode','auto'),perc:store.get('earPerc',true),rhythm:store.get('earRhythm',true),sens:store.get('earSens',60),harmPref:store.get('earHarm',false),
+const EAR={hist:migrate(store.get('earHist',[])),src:store.get('earSrc','rec'),mode:store.get('earMode','auto'),perc:store.get('earPerc',true),rhythm:store.get('earRhythm',true),sens:store.get('earSens',60),harmPref:store.get('earHarm',false),strR:store.get('earStrR','all'),fretR:store.get('earFretR','all'),
   st:'idle',ev:null,envs:[],fluxAvg:0.05,prev:null,lastOn:0,cur:null,legM:null,legN:0,sel:-1};
 EAR.sel=EAR.hist.length-1;
 const earThr=()=>0.05*Math.pow(1-EAR.sens/100,2)+0.003;
@@ -747,7 +754,17 @@ function nameNotes(ms){
 
 /* 弾ける場所の候補とコスト */
 const HARM=[[12,12],[7,19],[5,24],[19,19],[4,28],[9,28]];
-function cands(m){
+const STR_R={all:[0,5],'1-3':[0,2],'1-4':[0,3],'2-5':[1,4],'3-6':[2,5],'4-6':[3,5]};
+const FRET_R={all:[0,19],'0-4':[0,4],'2-7':[2,7],'5-9':[5,9],'7-12':[7,12],'9-15':[9,15]};
+function inRange(p){
+  const [a,b]=STR_R[EAR.strR]||STR_R.all,[f0,f1]=FRET_R[EAR.fretR]||FRET_R.all;
+  if(p.s<a||p.s>b)return false;
+  const f=p.f===0?0:p.f-S.capo;return p.f===0?f0===0:(f>=f0&&f<=f1);
+}
+// 指定した範囲の候補があればそれだけ、なければ全部
+const limit=r=>{const q=r.filter(inRange);return q.length?q:r};
+function cands(m){return limit(candsAll(m))}
+function candsAll(m){
   const t=tuning(),r=[];
   for(let s=5;s>=0;s--){
     for(let f=0;f<=FRETS;f++)if(playable(f)&&pitchAt(s,f)===m)r.push({s,f,h:false});
@@ -755,7 +772,7 @@ function cands(m){
   }
   return r;
 }
-const hasHarm=m=>cands(m).some(p=>p.h);
+const hasHarm=m=>candsAll(m).some(p=>p.h);
 function posCost(p,harm){return (p.f===0?0:0.12*(p.f-S.capo))+(p.h?(harm?-0.6:3):(harm?0.8:0))}
 function moveCost(a,b){
   if(!a)return 0;
@@ -765,44 +782,11 @@ function moveCost(a,b){
 }
 const samePos=(a,b)=>a&&b&&a.s===b.s&&a.f===b.f&&!!a.h===!!b.h;
 function evCands(e){const cs=cands(e.m);if(e.fix){const f=cs.filter(p=>samePos(p,e.fix));if(f.length)return f}return cs}
-// 同時に鳴った音の押さえ方：低い音ほど太い弦、指が届く範囲（4フレット以内）で探す
-function assignGroup(ms,anchor){
-  ms=[...new Set(ms)].sort((a,b)=>a-b);
-  const opts=ms.map(m=>{const r=[];for(let s=5;s>=0;s--)for(let f=0;f<=FRETS;f++)if(playable(f)&&pitchAt(s,f)===m)r.push({s,f,h:false});return r});
-  let best=null,bc=Infinity;const cur=[];
-  (function rec(j,prevS){
-    if(j===ms.length){
-      if(!cur.length)return;
-      let lo=99,hi=0,sum=0,n=0;cur.forEach(p=>{if(p.f>S.capo||(p.f>0&&!S.capo)){lo=Math.min(lo,p.f);hi=Math.max(hi,p.f);sum+=p.f;n++}});
-      const span=n?hi-lo:0;if(span>4)return;
-      const avg=n?sum/n:0,miss=ms.length-cur.length;
-      const c=span*0.8+avg*0.12+(anchor!=null&&n?Math.abs(avg-anchor)*0.3:0)+miss*3;
-      if(c<bc){bc=c;best=[...cur]}
-      return;
-    }
-    let any=false;
-    for(const p of opts[j])if(p.s<prevS){any=true;cur.push(p);rec(j+1,p.s);cur.pop()}
-    rec(j+1,prevS); // この音は省く（届かない場合）
-  })(0,6);
-  return best||[];
-}
+// TAB譜の場所：解析エンジンのビームサーチで決める（同じ弦は同時に1音・響いている弦は弾いていない、などの物理を使う）
 function tabPath(){
-  const H=EAR.hist,out=new Array(H.length).fill(null),layers=[];let prev=null;
-  H.forEach((e,i)=>{
-    if(e.k!=='n')return;const cs=evCands(e);if(!cs.length)return;
-    const L=cs.map(p=>{let best=0,bk=-1;if(prev){best=Infinity;prev.forEach((q,j)=>{const v=q.cost+moveCost(q.p,p);if(v<best){best=v;bk=j}})}return{p,cost:best+posCost(p,e.h),bk}});
-    layers.push({i,L});prev=L;
-  });
-  if(layers.length){
-    const L=layers[layers.length-1].L;let j=0;L.forEach((x,k)=>{if(x.cost<L[j].cost)j=k});
-    for(let li=layers.length-1;li>=0;li--){const ly=layers[li];out[ly.i]=ly.L[j].p;j=ly.L[j].bk}
-  }
-  let anchor=null;
-  H.forEach((e,i)=>{
-    if(e.k==='n'&&out[i]){if(out[i].f>0&&!out[i].h)anchor=out[i].f}
-    else if(e.k==='g'){out[i]=assignGroup(e.ms,anchor);const fr=out[i].filter(p=>p.f>0);if(fr.length)anchor=fr.reduce((a,p)=>a+p.f,0)/fr.length}
-  });
-  return out;
+  if(!window.TabEngine)return EAR.hist.map(()=>null);
+  const lim=(EAR.strR!=='all'||EAR.fretR!=='all')?inRange:null;
+  return TabEngine.assignTab(EAR.hist,{tuning:tuning(),capo:S.capo,frets:FRETS,harmPref:EAR.harmPref,inRange:lim});
 }
 
 /* ---- リアルタイム判定 ---- */
@@ -876,7 +860,7 @@ function finalize(early){
 function pushNote(m,h,t,c){h=h||(EAR.harmPref&&hasHarm(m));EAR.hist.push({k:'n',m,h,c,t:Math.round(t)});EAR.cur=m;EAR.st='note';EAR.legM=null;afterPush()}
 function pushChord(top,t){const b=top[0];EAR.hist.push({k:'c',name:b.name,r:b.r,iv:b.iv,alts:top.map(x=>[x.name,Math.max(0,Math.min(99,Math.round(x.s*100)))]),t:Math.round(t)});EAR.cur=null;EAR.st='chord';afterPush()}
 function pushPerc(lo,t){EAR.hist.push({k:'p',lo,t:Math.round(t)});EAR.cur=null;EAR.st='idle';afterPush()}
-function afterPush(){saveHist();EAR.sel=EAR.hist.length-1;renderEarAll()}
+function afterPush(){EAR.fromRec=false;saveHist();EAR.sel=EAR.hist.length-1;renderEarAll()}
 
 /* ---- 録音してAIで解析 ---- */
 const REC={on:false,chunks:[],sr:48000,t0:0,buf:null,raw:null,url:null,busy:false,model:null};
@@ -931,7 +915,6 @@ async function resample22k(x,sr){
   let mx=0;for(let i=0;i<r.length;i++)mx=Math.max(mx,Math.abs(r[i]));if(mx>0){const g=0.9/mx;for(let i=0;i<r.length;i++)r[i]*=g}
   return r;
 }
-const SENS=[[0.6,0.4,7],[0.45,0.3,5],[0.3,0.25,4]];
 async function analyze(){
   REC.busy=true;const P=$('#recProgBox'),bar=$('#recProg');P.hidden=false;bar.style.width='3%';
   const lab=$('#recLab');
@@ -950,83 +933,27 @@ async function analyze(){
   finally{REC.busy=false;setTimeout(()=>{P.hidden=true},600)}
 }
 function buildFromRec(){
-  if(!REC.out)return;
-  const [on,fr,minLen]=SENS[+$('#recSens').value]||SENS[1],style=$('#recStyle').value;
-  const t=tuning(),lo=Math.min(...t)+S.capo-1,hi=Math.max(...t)+19+1;
-  let notes=BP.noteFramesToTime(BP.addPitchBendsToNoteEvents(REC.out.contours,BP.outputToNotesPoly(REC.out.frames,REC.out.onsets,on,fr,minLen)));
-  notes=notes.filter(n=>n.pitchMidi>=lo&&n.pitchMidi<=hi);
-  const amax=Math.max(0.001,...notes.map(n=>n.amplitude));
-  notes=notes.filter(n=>n.amplitude>=amax*0.12).sort((a,b)=>a.startTimeSeconds-b.startTimeSeconds);
-  // 打音を先に探し、打音にくっついた短い音（ボディの響き）は取り除く
-  const perc=findPerc(REC.x22,notes);
-  notes=notes.filter(n=>!(n.durationSeconds<0.2&&perc.some(p=>Math.abs(p.t/1000-n.startTimeSeconds)<0.07)));
-  // 続けて始まった音（ジャラーンと鳴らした6本など）を1つのかたまりにまとめる
-  const groups=[];
-  for(const n of notes){const g=groups[groups.length-1],st=n.startTimeSeconds;if(g&&st-g.last<0.08&&st-g.t<0.25){g.ns.push(n);g.last=st}else groups.push({t:st,last:st,ns:[n]})}
-  const ev=[];let prevSet=null,prevT=-9,prevKind=null,prevChord=null;
-  for(const g of groups){
-    // 同じ高さは1つに。1オクターブ上の弱い音は倍音の聞き間違いとして消す
-    const by=new Map();for(const n of g.ns){const o=by.get(n.pitchMidi);if(!o||n.amplitude>o.a)by.set(n.pitchMidi,{m:n.pitchMidi,a:n.amplitude})}
-    let ps=[...by.values()];
-    ps=ps.filter(p=>!ps.some(q=>(p.m-q.m===12||p.m-q.m===24)&&p.a<q.a*0.6));
-    ps.sort((a,b)=>a.m-b.m);
-    const ms=ps.map(p=>p.m),tt=Math.round(g.t*1000),recent=g.t-prevT<0.5?prevSet:null;
-    const fresh=ps.filter(p=>!recent||!recent.has(p.m)),span=g.last-g.t;
-    let kind;
-    if(style==='melody')kind=ms.length?'n':null;
-    else if(style==='chord')kind=ms.length>=2?'g':'n';
-    else if(ms.length<=1)kind='n';
-    // ジャラーンと鳴らすと、弦ごとに少しずつずれて始まる（0.04秒以上の広がり）。それをコードの目印にする
-    else if(ms.length>=3&&(fresh.length>=3||(span>=0.04&&fresh.length>=2)))kind='g';
-    else if(prevKind==='g'&&ms.length>=3&&span>=0.04&&prevChord&&ms.filter(m=>prevChord.has(m)).length>=prevChord.size*0.8)kind='g';
-    else kind='n';
-    if(kind==='n'){
-      // 前の音が鳴り続けていても、新しく弾いた音（なければ一番強い音）を選ぶ
-      const pool=fresh.length?fresh:ps,pick=pool.reduce((a,b)=>b.a>a.a?b:a);
-      ev.push({k:'n',m:pick.m,h:EAR.harmPref&&hasHarm(pick.m),t:tt});
-    }else if(kind==='g'){
-      const m6=ms.length>6?ms.slice(-6):ms,top=nameNotes(m6);
-      ev.push({k:'g',ms:m6,t:tt,name:top?top[0].name:null,alts:top?top.map(x=>[x.name,Math.round(Math.min(0.99,x.s)*100)]):null,r:top?top[0].r:null});
-      prevChord=new Set(m6);
-    }
-    prevSet=new Set(ms);prevT=g.t;prevKind=kind;
+  if(!REC.out||!window.TabEngine)return;
+  const style=$('#recStyle').value,sens=+$('#recSens').value;
+  const res=TabEngine.transcribe(REC.out,REC.x22,{tuning:tuning(),capo:S.capo,sens,perc:EAR.perc});
+  const ev=TabEngine.groupEvents(res,{style});
+  for(const e of ev){
+    if(e.k==='n')e.h=EAR.harmPref&&hasHarm(e.m);
+    else if(e.k==='g'){const top=nameNotes(e.ms);e.name=top?top[0].name:null;e.alts=top?top.map(x=>[x.name,Math.round(Math.min(0.99,x.s)*100)]):null;e.r=top?top[0].r:null}
   }
-  // 0.2秒以内に同じ音が続いたら、響きの拾い直しとして1つにまとめる
-  const key=e=>e.k==='n'?'n'+e.m:e.k==='g'?'g'+e.ms.join(','):'';
-  const ded=[];for(const e of ev){const p=ded[ded.length-1];if(p&&key(p)===key(e)&&e.t-p.t<200)continue;ded.push(e)}
-  ev.length=0;ded.forEach(e=>ev.push(e));
-  perc.forEach(p=>ev.push(p));
-  ev.sort((a,b)=>a.t-b.t);
-  EAR.hist=ev;EAR.sel=ev.length?0:-1;saveHist();renderEarAll();
+  EAR.hist=ev;EAR.sel=ev.length?0:-1;EAR.fromRec=true;saveHist();renderEarAll();
   const nN=ev.filter(e=>e.k==='n').length,nG=ev.filter(e=>e.k==='g').length,nP=ev.filter(e=>e.k==='p').length;
-  $('#recLab').textContent=`解析完了：単音${nN}・和音${nG}・打音${nP}。下のTAB譜を確認してください`;
-}
-// 打音：急に大きくなってすぐ消える音。長く伸びる音程のある音と同時なら打音にしない
-function findPerc(x,notes){
-  if(!EAR.perc||!x)return[];
-  const hop=256,win=512,env=[];for(let i=0;i+win<x.length;i+=hop){let e=0;for(let j=0;j<win;j++)e+=x[i+j]*x[i+j];env.push(Math.sqrt(e/win))}
-  const emax=Math.max(...env),thr=emax*0.08,dt=hop/22050,out=[];let last=-1;
-  for(let i=4;i<env.length-20;i++){
-    const mn=Math.min(env[i-1],env[i-2],env[i-3],env[i-4]);
-    if(!(env[i]>thr&&env[i]>2*mn&&(i-last)*dt>0.08))continue;
-    last=i;const t=i*dt;
-    if(notes.some(n=>Math.abs(n.startTimeSeconds-t)<0.07&&n.durationSeconds>=0.2))continue;
-    let pk=0,pi=i;for(let j=i;j<i+4;j++)if(env[j]>pk){pk=env[j];pi=j}
-    const after=env[Math.min(env.length-1,pi+Math.round(0.2/dt))];if(after/pk>0.25)continue;
-    let zc=0;const s0=i*hop,s1=Math.min(x.length-1,s0+Math.round(0.04*22050));for(let k=s0+1;k<s1;k++)if((x[k]>=0)!==(x[k-1]>=0))zc++;
-    out.push({k:'p',lo:zc/(s1-s0)<0.06,t:Math.round(t*1000)});
-  }
-  return out;
+  $('#recLab').textContent=`解析完了：単音${nN}・同時の音${nG}・打音${nP}。録音を再生すると、TAB譜が追いかけて光ります`;
 }
 
 /* ---- 表示 ---- */
-function renderEarAll(){renderEarNow(EAR.sel);renderTab();$('#earThr').style.left=lvlPct(earThr())+'%'}
+function renderEarAll(){EAR.path=tabPath();renderEarNow(EAR.sel);renderTab();$('#earThr').style.left=lvlPct(earThr())+'%'}
 function renderEarNow(i){
   const e=EAR.hist[i],K=$('#earKind'),N=$('#earNote'),L=$('#earLab'),P=$('#earPos'),A=$('#earAct');
   A.innerHTML='';
   if(!e){K.className='kind';K.textContent='待機中';N.className='tnote idle';N.textContent='—';L.textContent='ここに選んだ音の詳しい情報が出ます';P.innerHTML='';return}
   N.className='tnote';
-  const path=tabPath();
+  const path=EAR.path||(EAR.path=tabPath());
   if(e.k==='n'){
     K.className='kind '+(e.h?'h':'n');K.textContent=e.h?'単音（ハーモニクス）':'単音';
     N.innerHTML=full(e.m);
@@ -1052,7 +979,7 @@ function renderEarNow(i){
 }
 function renderTab(){
   const H=EAR.hist,el=$('#earTab');if(!H.length){el.innerHTML='';return}
-  const path=tabPath(),k=chordShift();
+  const path=EAR.path||(EAR.path=tabPath()),k=chordShift();
   let h='<div class="tlabels"><div></div>'+[1,2,3,4,5,6].map(s=>`<div class="ln"><span>${s}</span></div>`).join('')+'</div>';
   H.forEach((e,i)=>{
     const p=path[i];let top='',cc=null,gp=null;
@@ -1111,17 +1038,47 @@ $('#earAct').addEventListener('click',e=>{
   else if(a==='board'){micStop();showTab('board');S.sel=ev.m;selPos=null;const p=tabPath()[EAR.sel];if(p&&!p.h&&!Array.isArray(p))selPos={s:p.s,f:p.f};renderBoard();return}
   saveHist();renderEarAll();
 });
-$('#earTab').addEventListener('click',e=>{const b=e.target.closest('.tcol');if(!b)return;EAR.sel=+b.dataset.i;renderEarNow(EAR.sel);document.querySelectorAll('.tcol').forEach(c=>c.classList.toggle('on',c===b));playEvent(EAR.hist[EAR.sel])});
+/* 再生に合わせてTAB譜を追いかける */
+const FOL={raf:0,timers:[]};
+function followTo(i,smooth=true){
+  EAR.sel=i;
+  document.querySelectorAll('#earTab .tcol').forEach(c=>c.classList.toggle('on',+c.dataset.i===i));
+  const el=$('#earTab'),col=el.querySelector(`.tcol[data-i="${i}"]`);
+  if(col){const x=col.offsetLeft-el.clientWidth/2+col.offsetWidth/2;el.scrollTo({left:Math.max(0,x),behavior:smooth?'smooth':'auto'})}
+  renderEarNow(i);
+}
+function stopTimers(){FOL.timers.forEach(clearTimeout);FOL.timers=[]}
+function idxAt(ms){let i=-1;for(let j=0;j<EAR.hist.length;j++){if(EAR.hist[j].t<=ms)i=j;else break}return i}
+function audioFollow(){
+  const au=$('#recAudio');cancelAnimationFrame(FOL.raf);stopTimers();
+  const step=()=>{
+    if(au.paused||au.ended)return;
+    if(EAR.fromRec){const i=idxAt(au.currentTime*1000+40);if(i>=0&&i!==EAR.sel)followTo(i)}
+    FOL.raf=requestAnimationFrame(step);
+  };
+  FOL.raf=requestAnimationFrame(step);
+}
+$('#recAudio').addEventListener('play',audioFollow);
+$('#recAudio').addEventListener('seeked',()=>{const au=$('#recAudio');if(au.paused&&EAR.fromRec){const i=idxAt(au.currentTime*1000+40);if(i>=0)followTo(i)}});
+$('#earTab').addEventListener('click',e=>{
+  const b=e.target.closest('.tcol');if(!b)return;const i=+b.dataset.i,ev=EAR.hist[i];
+  // 録音から作ったTAB譜なら、録音のその位置へ移動する
+  if(EAR.fromRec&&REC.url&&ev){const au=$('#recAudio');au.currentTime=Math.max(0,ev.t/1000-0.05);if(!au.paused){followTo(i);return}}
+  followTo(i);playEvent(ev);
+});
 $('#earPlay').addEventListener('click',()=>{
-  const H=EAR.hist;let w=0;
-  H.forEach((e,i)=>{if(i>0)w+=EAR.rhythm&&H[i-1].t!=null&&e.t>=H[i-1].t?Math.min(1.5,Math.max(0.08,(e.t-H[i-1].t)/1000)):0.45;playEvent(e,w)});
+  const H=EAR.hist;let w=0;stopTimers();$('#recAudio').pause();
+  H.forEach((e,i)=>{if(i>0)w+=EAR.rhythm&&H[i-1].t!=null&&e.t>=H[i-1].t?Math.min(1.5,Math.max(0.08,(e.t-H[i-1].t)/1000)):0.45;playEvent(e,w);FOL.timers.push(setTimeout(()=>followTo(i),w*1000+20))});
 });
 $('#earUndo').addEventListener('click',()=>{EAR.hist.pop();saveHist();EAR.sel=EAR.hist.length-1;renderEarAll()});
-$('#earClear').addEventListener('click',()=>{EAR.hist=[];saveHist();EAR.sel=-1;renderEarAll()});
+$('#earClear').addEventListener('click',()=>{EAR.fromRec=false;EAR.hist=[];saveHist();EAR.sel=-1;renderEarAll()});
 $('#earSens').value=EAR.sens;
 $('#earSens').addEventListener('input',e=>{EAR.sens=+e.target.value;store.set('earSens',EAR.sens);$('#earThr').style.left=lvlPct(earThr())+'%'});
 $('#earPerc').checked=EAR.perc;$('#earPerc').addEventListener('change',e=>{EAR.perc=e.target.checked;store.set('earPerc',EAR.perc)});
 $('#earRhythm').checked=EAR.rhythm;$('#earRhythm').addEventListener('change',e=>{EAR.rhythm=e.target.checked;store.set('earRhythm',EAR.rhythm)});
+$('#earStrR').value=EAR.strR;$('#earFretR').value=EAR.fretR;
+$('#earStrR').addEventListener('change',e=>{EAR.strR=e.target.value;store.set('earStrR',EAR.strR);renderEarAll()});
+$('#earFretR').addEventListener('change',e=>{EAR.fretR=e.target.value;store.set('earFretR',EAR.fretR);renderEarAll()});
 $('#earHarm').checked=EAR.harmPref;$('#earHarm').addEventListener('change',e=>{EAR.harmPref=e.target.checked;store.set('earHarm',EAR.harmPref)});
 function renderEarMode(){
   $('#earMode').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===EAR.mode)));
