@@ -361,7 +361,8 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
       <button id="learnRun" class="btn pri wide">学習する</button>
       <div class="row2" style="margin-top:8px"><button id="learnReset" class="btn small">学習を元に戻す</button><button id="learnClear" class="btn small">ためた材料を消す</button></div>
       <div class="row2" style="margin-top:8px"><button id="learnExport" class="btn small">学習データを書き出す</button><button id="learnImport" class="btn small">読み込む</button></div>
-      <div class="row2" style="margin-top:8px"><button id="recExport" class="btn small">最後の録音を書き出す（WAV）</button></div>
+      <div class="row2" style="margin-top:8px"><button id="recExportC" class="btn small">最後の録音を書き出す（Claudeに送る用）</button><button id="recExport" class="btn small">WAVで書き出す</button></div>
+      <div class="row2" style="margin-top:8px" id="recShareRow" hidden><button id="recShare" class="btn small">今の録音ファイルを共有する</button></div>
       <input type="file" id="learnFile" accept=".json,application/json" hidden>
       <p class="sub" id="learnIO"></p>
       <p class="hint">使い方：①録音して解析 ②下の再生バーで聞きながら、TAB譜の列をタップして直す（列の真下に直すボタンが出ます。雑音は「消す（ノイズ）」、前に弾いた音が響いている途中で同じ音が出てきたら「前の音の響き（消す）」で直します。拾われなかった音は、再生を止めた位置で「＋足す」） ③「確認済み」 ④何本か確認したら「学習する」。直さなかった所は「合っていた」として覚えます。確認済みの録音は一覧から1本ずつ消せて、直し直したら同じボタンで上書きできます。学習は元の判定器に「補正」を足すだけで、良くならなければ採用しません。</p>
@@ -1283,6 +1284,35 @@ $('#learnExport').addEventListener('click',async()=>{
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
   $('#learnIO').textContent=`「${name}」を保存しました（録音${n}本・音の正解${pn}・打音の正解${pp}）。このファイルをClaudeとのチャットに送ってください`;
 });
+/* 最後の録音を圧縮（m4a か webm）で書き出す：WAVはチャットに貼れないことがあるため。再生しながら録り直すので録音と同じ時間かかる */
+let REC_FILE=null;
+$('#recExportC').addEventListener('click',async()=>{
+  if(!REC.raw||!REC.raw.length){$('#learnIO').textContent='書き出す録音がまだありません（先に録音してください）';return}
+  if(!window.MediaRecorder){$('#learnIO').textContent='このブラウザでは使えません。「WAVで書き出す」を使ってください';return}
+  const btn=$('#recExportC');if(btn.disabled)return;btn.disabled=true;
+  try{
+    const a=ctx();const sr=REC.sr||48000,buf=a.createBuffer(1,REC.raw.length,sr);buf.copyToChannel(REC.raw instanceof Float32Array?REC.raw:Float32Array.from(REC.raw),0);
+    const types=['audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
+    const mt=types.find(t=>MediaRecorder.isTypeSupported(t))||'';const ext=mt.startsWith('audio/mp4')?'m4a':mt.includes('ogg')?'ogg':'webm';
+    const dst=a.createMediaStreamDestination(),src=a.createBufferSource();src.buffer=buf;src.connect(dst);
+    const mr=new MediaRecorder(dst.stream,mt?{mimeType:mt,audioBitsPerSecond:128000}:{audioBitsPerSecond:128000});const ch=[];
+    mr.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data)};
+    const done=new Promise(r=>{mr.onstop=r});
+    const sec=Math.ceil(buf.duration);let left=sec;$('#learnIO').textContent=`ファイルにしています…あと${left}秒（録音と同じ時間かかります。画面はこのままで）`;
+    const iv=setInterval(()=>{left=Math.max(0,left-1);$('#learnIO').textContent=`ファイルにしています…あと${left}秒（録音と同じ時間かかります。画面はこのままで）`},1000);
+    mr.start(500);src.start();src.onended=()=>setTimeout(()=>mr.stop(),300);
+    await done;clearInterval(iv);
+    const blob=new Blob(ch,{type:mr.mimeType||mt||'audio/webm'});
+    const d=new Date(),pad=q=>String(q).padStart(2,'0');
+    const name=`guitar-aibo-rec-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}_tune${tuning().join('-')}_capo${S.capo}${EAR.harmPref?'_harm':''}.${ext}`;
+    REC_FILE=new File([blob],name,{type:blob.type});
+    const url=URL.createObjectURL(blob),l=document.createElement('a');l.href=url;l.download=name;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+    $('#recShareRow').hidden=!(navigator.canShare&&navigator.canShare({files:[REC_FILE]}));
+    $('#learnIO').textContent=`「${name}」を「ダウンロード」に保存しました（${(blob.size/1e6).toFixed(1)}MB）。そこからClaudeのチャットに貼ってください`+($('#recShareRow').hidden?'':'。下の「共有する」からも送れます');
+  }catch(e){$('#learnIO').textContent='書き出せませんでした：'+((e&&(e.name+': '+e.message))||e)}
+  finally{btn.disabled=false}
+});
+$('#recShare').addEventListener('click',async()=>{if(!REC_FILE)return;try{await navigator.share({files:[REC_FILE]});$('#learnIO').textContent='録音を共有しました'}catch(e){if(!(e&&e.name==='AbortError'))$('#learnIO').textContent='共有できませんでした：'+((e&&(e.name+': '+e.message))||e)}});
 /* 最後の録音をWAVで書き出す（拾われない音をClaudeに調べてもらう用） */
 $('#recExport').addEventListener('click',async()=>{
   if(!REC.raw||!REC.raw.length){$('#learnIO').textContent='書き出す録音がまだありません（先に録音してください）';return}
