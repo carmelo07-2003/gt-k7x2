@@ -107,6 +107,70 @@
     }
     return sig(h[0]);
   }
+  function mlpLogit(net, v) { const p = Math.min(1 - 1e-7, Math.max(1e-7, mlp(net, v))); return Math.log(p / (1 - p)); }
+
+  /* ---------- あなたの修正から学んだ「補正」 ----------
+   * 元の判定器の値（ロジット z）に、補正 b + a*z + Σ w_i*(標準化した特徴_i) を足す。
+   * 補正が0なら元の判定器と同じ。学習は修正データだけで、強めの正則化をかけて少しずつ合わせる。 */
+  let CORR_NOTE = null, CORR_PERC = null;
+  function corrApply(cm, net, v, z) {
+    if (!cm) return z;
+    let s = cm.b + cm.a * z;
+    for (let i = 0; i < cm.w.length && i < v.length; i++) s += cm.w[i] * (v[i] - net.mu[i]) / net.sd[i];
+    return z + s;
+  }
+  // rows: [{z, y, v}]。返り値：補正モデル
+  function trainCorr(rows, net, opt) {
+    opt = opt || {};
+    const d = net.mu.length, n = rows.length, it = opt.iter || 400;
+    // 材料が少ない時ほど強く抑える（少しの材料で大きく変わらないように）
+    const lam = opt.l2 == null ? 0.02 * Math.max(1, 400 / Math.max(1, n)) : opt.l2;
+    const pos = rows.filter(r => r.y).length, pw = Math.min(5, Math.max(1, (n - pos) / Math.max(1, pos)));
+    const Z = rows.map(r => r.v.map((x, i) => (x - net.mu[i]) / net.sd[i]));
+    const w = new Array(d).fill(0); let a = 0, b = 0;
+    const mw = new Array(d + 2).fill(0), vw = new Array(d + 2).fill(0);
+    for (let t = 1; t <= it; t++) {
+      const g = new Array(d + 2).fill(0);
+      for (let k = 0; k < n; k++) {
+        const r = rows[k]; let s = r.z + b + a * r.z;
+        for (let i = 0; i < d; i++) s += w[i] * Z[k][i];
+        const e = (sig(s) - r.y) * (r.y ? pw : 1);
+        for (let i = 0; i < d; i++) g[i] += e * Z[k][i];
+        g[d] += e * r.z; g[d + 1] += e;
+      }
+      for (let i = 0; i < d + 2; i++) {
+        let gi = g[i] / n + lam * (i < d ? w[i] : i === d ? a : 0);
+        mw[i] = 0.9 * mw[i] + 0.1 * gi; vw[i] = 0.999 * vw[i] + 0.001 * gi * gi;
+        const step = 0.05 * (mw[i] / (1 - Math.pow(0.9, t))) / (Math.sqrt(vw[i] / (1 - Math.pow(0.999, t))) + 1e-8);
+        if (i < d) w[i] -= step; else if (i === d) a -= step; else b -= step;
+      }
+    }
+    return { w: w.map(x => Math.round(x * 1e4) / 1e4), a: Math.round(a * 1e4) / 1e4, b: Math.round(b * 1e4) / 1e4 };
+  }
+  function f1At(rows, th, cm, net) {
+    let tp = 0, fp = 0, fn = 0;
+    for (const r of rows) { const p = sig(cm ? corrApply(cm, net, r.v, r.z) : r.z); if (p >= th) { if (r.y) tp++; else fp++; } else if (r.y) fn++; }
+    return { f1: 2 * tp / Math.max(1, 2 * tp + fp + fn), tp, fp, fn };
+  }
+  // 学習して、学習に使っていない分で「良くなったか」を確かめる。良くならなければ採用しない
+  function learnFromRows(kind, recs) {
+    const net = kind === 'note' ? NOTE_NET2 : PERC_NET;
+    if (!net) return { ok: false, reason: '判定器が読み込まれていません' };
+    const th = net.th || 0.5;
+    const all = []; recs.forEach((rc, ri) => rc.forEach(r => all.push(Object.assign({ rec: ri }, r))));
+    const npos = all.filter(r => r.y).length;
+    if (npos < 5) return { ok: false, reason: '正解の数がまだ少ない（5個以上必要）', npos };
+    let tr, va;
+    if (recs.length >= 2) { const last = recs.length - 1; tr = all.filter(r => r.rec !== last); va = all.filter(r => r.rec === last); }
+    else { tr = all.filter((r, i) => i % 4 !== 0); va = all.filter((r, i) => i % 4 === 0); }
+    if (!va.some(r => r.y)) { tr = all.filter((r, i) => i % 4 !== 0); va = all.filter((r, i) => i % 4 === 0); }
+    if (va.filter(r => r.y).length < 2) return { ok: false, reason: '確かめる材料が足りない（確認済みの録音を増やしてください）', npos };
+    const cm = trainCorr(tr, net);
+    const before = f1At(va, th, null, net), after = f1At(va, th, cm, net);
+    // 確かめ用の分で、はっきり良くなった時だけ採用
+    const ok = after.f1 > before.f1 + 0.005 || (after.f1 >= before.f1 && after.fp + after.fn < before.fp + before.fn);
+    return { ok, model: ok ? trainCorr(all, net) : null, before: before.f1, after: after.f1, npos, n: all.length };
+  }
   // 学習前の仮の判定（重みがない時）
   function fallbackNote(f) { return sig(9 * (f[0] - 0.45) + 1.2 * f[4] - 2.5 * Math.max(0, f[7]) - 1.5 * Math.max(0, f[9])); }
 
@@ -195,7 +259,10 @@
       c.p1 = NOTE_NET ? mlp(NOTE_NET, c.f) : fallbackNote(c.f);
     }
     // 2段目：まわりの判定結果（1オクターブ下や上が本物か、直前に同じ音があるか）も見て決め直す
-    if (NOTE_NET2) { const ctx = contextFeatures(cands); cands.forEach((c, i) => { c.p = mlp(NOTE_NET2, c.f.concat(ctx[i])); }); }
+    if (NOTE_NET2) {
+      const ctx = contextFeatures(cands);
+      cands.forEach((c, i) => { c.v = c.f.concat(ctx[i]); c.z = mlpLogit(NOTE_NET2, c.v); c.p = sig(corrApply(CORR_NOTE, NOTE_NET2, c.v, c.z)); });
+    }
     else cands.forEach(c => { c.p = c.p1; });
     // 「ハーモニクスを弾いている」がONの時は、ハーモニクスで出せる高さ（開放弦の1・1.5・2オクターブ上）の基準をゆるめる
     const harmSet = new Set();
@@ -221,12 +288,14 @@
       n.time = n.time - 0.009;
     }
     // 打音
-    let perc = [];
+    let perc = [], percAll = null;
     if (opt.perc !== false) {
       const hfMax = Math.max(...hf.env), le = lowEnvelope(x);
       for (const c of percCandidates(x, hf, le)) {
         const f = percFeatures(c, x, hf, kept, hfMax, le, cands);
-        const p = PERC_NET ? mlp(PERC_NET, f) : fallbackPerc(f);
+        const z = PERC_NET ? mlpLogit(PERC_NET, f) : 0;
+        const p = PERC_NET ? sig(corrApply(CORR_PERC, PERC_NET, f, z)) : fallbackPerc(f);
+        if (opt.keepCands) (percAll || (percAll = [])).push({ time: c.time, v: f, z });
         if (p >= (opt.percThr || (PERC_NET && PERC_NET.th) || 0.5)) {
           let lo = f[2] > 0.25;
           if (PERC_NET && PERC_NET.lohi) { const L = PERC_NET.lohi; let z = L.b; for (let i = 0; i < f.length; i++) z += L.w[i] * (f[i] - L.mu[i]) / L.sd[i]; lo = z >= 0; }
@@ -247,7 +316,7 @@
       }
     }
     const out = { notes: kept.map(n => ({ time: n.time, m: n.m, p: n.p, amp: n.amp, end: n.end, sus: n.sus })), perc: perc.map(q => ({ time: q.time, lo: q.lo, p: q.p })) };
-    if (opt.keepCands) out.cands = cands;
+    if (opt.keepCands) { out.cands = cands; out.percCands = percAll || []; }
     return out;
   }
 
@@ -364,8 +433,36 @@
     return best.hist;
   }
 
+  // 修正し終わったTAB譜（hist）を正解として、学習用の行を作る
+  function learnRows(res, hist) {
+    const r3 = v => v.map(x => Math.round(x * 1000) / 1000);
+    const note = [], perc = [];
+    const cs = (res.cands || []).filter(c => c.v).map(c => ({ c, t: c.time - 0.009 }));
+    const usedC = new Set();
+    for (const e of hist) {
+      if (e.k !== 'n' && e.k !== 'g') continue;
+      const ms = e.k === 'n' ? [e.m] : e.ms, et = e.t / 1000, win = e.k === 'n' ? 0.05 : 0.18;
+      for (const m of ms) {
+        let best = null, bd = 1e9;
+        for (const o of cs) { if (usedC.has(o) || o.c.m !== m) continue; const d = Math.abs(o.t - et); if (d < win && d < bd) { bd = d; best = o; } }
+        if (best) usedC.add(best);
+      }
+    }
+    for (const o of cs) { const y = usedC.has(o) ? 1 : 0; if (y || o.c.p > 0.03) note.push({ z: Math.round(o.c.z * 1000) / 1000, y, v: r3(o.c.v) }); }
+    const ps = res.percCands || [], usedP = new Set();
+    for (const e of hist) {
+      if (e.k !== 'p') continue; const et = e.t / 1000; let best = -1, bd = 0.05;
+      ps.forEach((q, i) => { if (usedP.has(i)) return; const d = Math.abs(q.time - et); if (d < bd) { bd = d; best = i; } });
+      if (best >= 0) usedP.add(best);
+    }
+    ps.forEach((q, i) => perc.push({ z: Math.round(q.z * 1000) / 1000, y: usedP.has(i) ? 1 : 0, v: r3(q.v) }));
+    return { note, perc };
+  }
+
   G.TabEngine = {
     transcribe, groupEvents, assignTab, features, percFeatures, onsetCandidates, percCandidates, hfEnvelope, lowEnvelope, partialE, f2t,
     setNets(n, p, n2) { NOTE_NET = n; PERC_NET = p; NOTE_NET2 = n2 || null; }, contextFeatures, mlp, NF,
+    setCorr(n, p) { CORR_NOTE = n || null; CORR_PERC = p || null; }, getCorr() { return { note: CORR_NOTE, perc: CORR_PERC }; },
+    learnFromRows, trainCorr, f1At, corrApply, learnRows,
   };
 })(typeof self !== 'undefined' ? self : globalThis);
