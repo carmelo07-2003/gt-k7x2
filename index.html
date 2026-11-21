@@ -360,6 +360,9 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
       <button id="learnConfirm" class="btn wide">この録音は確認済み（直した内容を覚える材料にする）</button>
       <button id="learnRun" class="btn pri wide">学習する</button>
       <div class="row2" style="margin-top:8px"><button id="learnReset" class="btn small">学習を元に戻す</button><button id="learnClear" class="btn small">ためた材料を消す</button></div>
+      <div class="row2" style="margin-top:8px"><button id="learnExport" class="btn small">学習データを書き出す</button><button id="learnImport" class="btn small">読み込む</button></div>
+      <input type="file" id="learnFile" accept=".json,application/json" hidden>
+      <p class="sub" id="learnIO"></p>
       <p class="hint">使い方：①録音して解析 ②下の再生バーで聞きながら、TAB譜の列をタップして直す（列の真下に直すボタンが出ます。雑音は「消す」＝ノイズとして覚えます。拾われなかった音は、再生を止めた位置で「＋足す」） ③「確認済み」 ④何本か確認したら「学習する」。直さなかった所は「合っていた」として覚えます。確認済みの録音は一覧から1本ずつ消せて、直し直したら同じボタンで上書きできます。学習は元の判定器に「補正」を足すだけで、良くならなければ採用しません。</p>
     </div>
     <p class="hint">TAB譜：横線が弦（上が1弦）、数字が押さえるフレット、&lt;12&gt;はハーモニクスです。手の移動が少なくなるように、全体で並びを計算しています。録音を再生すると、今鳴っている列が光って譜面が追いかけます（列をタップすると、録音のその位置へ移動）。最後の録音はスマホに保存されるので、ページを開き直しても続きから直せます。曲を流して聞かせるのは苦手なので、自分で弾いた音で使ってください。<br>AI解析：Spotify「Basic Pitch」（Apache-2.0）の結果を、ギター用に学習させた判定器で選び直しています（倍音や響きの拾い直しを除き、弦の物理を使ってTAB譜を決めます）。解析はすべてスマホの中で行います。</p>
@@ -1257,6 +1260,39 @@ $('#learnList').addEventListener('click',e=>{
   const L=loadLearn(),i=+b.dataset.del,r=L[i];L.splice(i,1);saveLearn(L);
   if(r&&r.id===REC.learnId){REC.learnId=null;REC.confirmed=false}
   renderLearn();
+});
+/* 学習データの書き出し・読み込み（Claudeに送って学習し直してもらう・機種変更・控え） */
+$('#learnExport').addEventListener('click',async()=>{
+  const L=loadLearn();if(!L.length){$('#learnIO').textContent='書き出す学習データがまだありません（「確認済み」の録音を作ってください）';return}
+  let corr=null;try{corr=JSON.parse(localStorage.getItem('gb_corr')||'null')}catch(e){}
+  const d=new Date(),pad=n=>String(n).padStart(2,'0');
+  const name=`guitar-aibo-learn-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  const data={app:'guitar-aibo',kind:'learn',v:1,exportedAt:d.toISOString(),tuning:tuning(),capo:S.capo,a4:A4,learn:L,corr};
+  const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+  const n=L.length,pn=L.reduce((a,r)=>a+r.note.filter(x=>x.y).length,0),pp=L.reduce((a,r)=>a+r.perc.filter(x=>x.y).length,0);
+  // スマホの「共有」が使えれば、そこからチャットやファイルに送れる。使えなければファイルとして保存
+  try{
+    const file=new File([blob],name,{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'ギター相棒の学習データ'});$('#learnIO').textContent=`共有しました（録音${n}本・音の正解${pn}・打音の正解${pp}）`;return}
+  }catch(e){if(e&&e.name==='AbortError'){$('#learnIO').textContent='共有をやめました';return}}
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
+  $('#learnIO').textContent=`「${name}」を保存しました（録音${n}本・音の正解${pn}・打音の正解${pp}）。このファイルをClaudeとのチャットに送ってください`;
+});
+$('#learnImport').addEventListener('click',()=>$('#learnFile').click());
+$('#learnFile').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+  try{
+    const data=JSON.parse(await f.text());
+    if(!data||data.app!=='guitar-aibo'||!Array.isArray(data.learn))throw new Error('ギター相棒の学習データではありません');
+    const L=loadLearn(),have=new Set(L.map(r=>r.id));let add=0;
+    for(const r of data.learn){if(r&&Array.isArray(r.note)&&Array.isArray(r.perc)&&!have.has(r.id)){L.push(r);have.add(r.id);add++}}
+    while(L.length>LEARN_MAX)L.shift();
+    if(!saveLearn(L))throw new Error('スマホの保存場所がいっぱいです');
+    let msg=`${add}本の録音を読み込みました（同じものは重ねていません）`;
+    if(data.corr&&!localStorage.getItem('gb_corr')){try{localStorage.setItem('gb_corr',JSON.stringify(data.corr));loadCorr();msg+='。学習結果も読み込みました'}catch(_){}}
+    else if(data.corr)msg+='。学習結果は今のものを残しました（必要なら「学習する」を押してください）';
+    $('#learnIO').textContent=msg;renderLearn();
+  }catch(err){$('#learnIO').textContent='読み込めませんでした：'+(err&&err.message||err)}
 });
 let clearArm=0;
 $('#learnClear').addEventListener('click',()=>{
