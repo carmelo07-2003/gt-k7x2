@@ -197,7 +197,11 @@
     // 2段目：まわりの判定結果（1オクターブ下や上が本物か、直前に同じ音があるか）も見て決め直す
     if (NOTE_NET2) { const ctx = contextFeatures(cands); cands.forEach((c, i) => { c.p = mlp(NOTE_NET2, c.f.concat(ctx[i])); }); }
     else cands.forEach(c => { c.p = c.p1; });
-    for (const c of cands) if (c.p >= thr) { notes.push(c); c.acc = true; }
+    // 「ハーモニクスを弾いている」がONの時は、ハーモニクスで出せる高さ（開放弦の1・1.5・2オクターブ上）の基準をゆるめる
+    const harmSet = new Set();
+    if (opt.harmPref) tuning.forEach(o => [12, 19, 24].forEach(a => harmSet.add(o + capo + a)));
+    const hThr = Math.max(0.2, thr - (opt.harmBoost == null ? 0.3 : opt.harmBoost));
+    for (const c of cands) if (c.p >= (harmSet.has(c.m) ? hThr : thr)) { notes.push(c); c.acc = true; }
     // 同じ高さで近すぎる（35ms以内）ものは強い方だけ
     notes.sort((a, b) => b.p - a.p);
     const kept = [];
@@ -229,6 +233,11 @@
           perc.push({ time: c.time, lo, p, f });
         }
       }
+      // 1回の叩きが長く響いて何度も見つかるのを防ぐ：0.09秒以内は一番確かなもの1つに
+      perc.sort((a, b) => b.p - a.p);
+      const pk = [];
+      for (const q of perc) if (!pk.some(r => Math.abs(r.time - q.time) < 0.09)) pk.push(q);
+      perc = pk.sort((a, b) => a.time - b.time);
       // 打音と同時の、低くてすぐ消える「音」は胴鳴りなので消す
       for (const q of perc) {
         for (let i = kept.length - 1; i >= 0; i--) {
@@ -286,7 +295,8 @@
   // 1つの出来事の押さえ方の候補（同時に鳴らす音は違う弦・指が届く範囲）
   function eventOptions(e, ctx) {
     const ms = e.k === 'n' ? [e.m] : e.ms;
-    const harm = e.k === 'n' && (e.h || ctx.harmPref);
+    // 開放弦と同じ高さは「開放弦が鳴った」ことが多いので、ハーモニクス優先の対象にしない
+    const harm = e.k === 'n' && (e.h || (ctx.harmPref && !ctx.tuning.some(o => o + ctx.capo === e.m)));
     const per = ms.map(m => options(m, ctx, harm));
     if (e.k === 'n' && e.fix) {
       const f = per[0].filter(p => p.s === e.fix.s && p.f === e.fix.f && !!p.h === !!e.fix.h);
@@ -303,7 +313,7 @@
         for (let a = 0; a < cur.length; a++) for (let b = a + 1; b < cur.length; b++) if (ms[a] < ms[b] && cur[a].s < cur[b].s) order++;
         const avg = fr.length ? fr.reduce((x, y) => x + y, 0) / fr.length : null;
         let c = 0.45 * Math.max(0, span - 3) + 0.15 * span + 0.6 * order;
-        for (const p of cur) c += p.h ? (harm ? -0.6 : 3) : (p.f > ctx.capo ? 0.035 * (p.f - ctx.capo) : 0) + (harm && e.h ? 0.8 : 0);
+        for (const p of cur) c += p.h ? (harm ? -0.6 : 3) + ([12, 7, 5].includes(p.f - ctx.capo) ? 0 : 0.5) : (p.f > ctx.capo ? 0.035 * (p.f - ctx.capo) : 0) + (harm && e.h ? 0.8 : 0);
         out.push({ pos: cur.slice(), c, avg });
         return;
       }
@@ -331,7 +341,7 @@
           const oc = b.occ[p.s];
           if (!oc) continue;
           const m = ms[o.pos.indexOf(p)];
-          if (oc.m === m && !p.h) { c -= 0.25; continue; } // 同じ音は同じ弦で弾き直すのが自然
+          if (oc.m === m) { c -= 0.25; continue; } // 同じ音は同じ弦で弾き直すのが自然（ハーモニクスも同じ）
           // 前の音がまだ響いている弦を弾いたことになる → 不自然
           if (oc.end != null && oc.end > t + 0.05) c += 1.6 * Math.min(1, (oc.end - t) / 0.3);
         }

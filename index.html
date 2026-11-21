@@ -306,7 +306,7 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
     <div class="card" style="margin-top:12px">
       <div class="set"><span class="lab">使う弦</span><select id="earStrR"><option value="all">全部</option><option value="1-3">1〜3弦</option><option value="1-4">1〜4弦</option><option value="2-5">2〜5弦</option><option value="3-6">3〜6弦</option><option value="4-6">4〜6弦</option></select></div>
       <div class="set"><span class="lab">フレット</span><select id="earFretR"><option value="all">全部</option><option value="0-4">0〜4（開放弦の近く）</option><option value="2-7">2〜7</option><option value="5-9">5〜9</option><option value="7-12">7〜12</option><option value="9-15">9〜15</option></select></div>
-      <label class="chk"><input type="checkbox" id="earHarm"> ハーモニクスを弾いている（ハーモニクスの場所を優先する）</label>
+      <label class="chk"><input type="checkbox" id="earHarm"> ハーモニクスを弾いている（ハーモニクスの音を拾いやすくし、TAB譜でもハーモニクスの場所を優先する）</label>
       <p class="sub">お手本の動画で弾いている場所に合わせると、TAB譜の場所が合いやすくなります（範囲内で弾けない音だけ、範囲外の場所を使います）。カポやチューニングも、右上の「設定」で動画と同じにしてください。</p>
     </div>
     <p class="hint">金色が「おすすめの場所」です。違う場所をタップすると、その場所に固定できます。</p>
@@ -935,10 +935,10 @@ async function analyze(){
 function buildFromRec(){
   if(!REC.out||!window.TabEngine)return;
   const style=$('#recStyle').value,sens=+$('#recSens').value;
-  const res=TabEngine.transcribe(REC.out,REC.x22,{tuning:tuning(),capo:S.capo,sens,perc:EAR.perc});
+  const res=TabEngine.transcribe(REC.out,REC.x22,{tuning:tuning(),capo:S.capo,sens,perc:EAR.perc,harmPref:EAR.harmPref});
   const ev=TabEngine.groupEvents(res,{style});
   for(const e of ev){
-    if(e.k==='n')e.h=EAR.harmPref&&hasHarm(e.m);
+    if(e.k==='n')e.h=EAR.harmPref&&hasHarm(e.m)&&!tuning().some(o=>o+S.capo===e.m);
     else if(e.k==='g'){const top=nameNotes(e.ms);e.name=top?top[0].name:null;e.alts=top?top.map(x=>[x.name,Math.round(Math.min(0.99,x.s)*100)]):null;e.r=top?top[0].r:null}
   }
   EAR.hist=ev;EAR.sel=ev.length?0:-1;EAR.fromRec=true;saveHist();renderEarAll();
@@ -1079,7 +1079,7 @@ $('#earRhythm').checked=EAR.rhythm;$('#earRhythm').addEventListener('change',e=>
 $('#earStrR').value=EAR.strR;$('#earFretR').value=EAR.fretR;
 $('#earStrR').addEventListener('change',e=>{EAR.strR=e.target.value;store.set('earStrR',EAR.strR);renderEarAll()});
 $('#earFretR').addEventListener('change',e=>{EAR.fretR=e.target.value;store.set('earFretR',EAR.fretR);renderEarAll()});
-$('#earHarm').checked=EAR.harmPref;$('#earHarm').addEventListener('change',e=>{EAR.harmPref=e.target.checked;store.set('earHarm',EAR.harmPref)});
+$('#earHarm').checked=EAR.harmPref;$('#earHarm').addEventListener('change',e=>{EAR.harmPref=e.target.checked;store.set('earHarm',EAR.harmPref);if(EAR.fromRec&&REC.out&&window.TabEngine)buildFromRec();else renderEarAll()});
 function renderEarMode(){
   $('#earMode').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===EAR.mode)));
   $('#earSrc').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===EAR.src)));
