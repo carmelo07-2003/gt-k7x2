@@ -362,6 +362,7 @@ nav.tabs button[aria-selected=true]{color:var(--sel)}
       <div class="row2" style="margin-top:8px"><button id="learnReset" class="btn small">学習を元に戻す</button><button id="learnClear" class="btn small">ためた材料を消す</button></div>
       <div class="row2" style="margin-top:8px"><button id="learnExport" class="btn small">学習データを書き出す</button><button id="learnImport" class="btn small">読み込む</button></div>
       <div class="row2" style="margin-top:8px"><button id="recExportC" class="btn small">最後の録音を書き出す（Claudeに送る用）</button><button id="recExport" class="btn small">WAVで書き出す</button></div>
+      <div class="row2" style="margin-top:8px"><button id="diagExport" class="btn small">診断情報を書き出す（うまく拾えない時）</button></div>
       <div class="row2" style="margin-top:8px" id="recShareRow" hidden><button id="recShare" class="btn small">今の録音ファイルを共有する</button></div>
       <input type="file" id="learnFile" accept=".json,application/json" hidden>
       <p class="sub" id="learnIO"></p>
@@ -1283,6 +1284,32 @@ $('#learnExport').addEventListener('click',async()=>{
   }catch(e){if(e&&e.name==='AbortError'){$('#learnIO').textContent='共有をやめました';return}}
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
   $('#learnIO').textContent=`「${name}」を保存しました（録音${n}本・音の正解${pn}・打音の正解${pp}）。このファイルをClaudeとのチャットに送ってください`;
+});
+/* 診断情報：設定・学習の補正・最後の録音の解析の中身（AIの反応と判定）。うまく拾えない原因をClaudeが調べる用 */
+$('#diagExport').addEventListener('click',async()=>{
+  try{
+    const r=REC.res,O=REC.out&&REC.out.onsets,rd=v=>Math.round(v*1000)/1000;
+    const ls={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('gb_')&&k!=='gb_learn'&&k!=='gb_earHist'){const v=localStorage.getItem(k);ls[k]=v.length>3000?v.slice(0,3000)+'…':v}}
+    const L=loadLearn();
+    const top={};if(O)O.forEach(row=>row.forEach((v,k)=>{if(v>(top[k]||0))top[k]=v}));
+    const cands=r&&r.cands?r.cands.filter(c=>c.o>=0.4||c.p>=0.05||c.acc).map(c=>[rd(c.time),c.m,rd(c.o),rd(c.p1||0),rd(c.p||0),c.acc?1:0]):null;
+    const data={app:'guitar-aibo',kind:'diag',v:1,at:new Date().toISOString(),ua:navigator.userAgent,
+      set:{tuning:tuning(),capo:S.capo,a4:A4,style:$('#recStyle').value,sens:$('#recSens').value,percSens:$('#recPercSens').value,harm:EAR.harmPref,perc:EAR.perc,strR:EAR.strR,fretR:EAR.fretR},
+      ls,learn:L.map(x=>({id:x.id,mode:x.mode,note:x.note.length,noteY:x.note.filter(q=>q.y).length,perc:x.perc.length})),
+      rec:{sec:REC.raw?rd(REC.raw.length/(REC.sr||48000)):0,sr:REC.sr,frames:O?O.length:0,peakRaw:REC.raw?rd(REC.raw.reduce((m,v)=>Math.max(m,Math.abs(v)),0)):0,
+        tf:window.tf&&tf.getBackend?tf.getBackend():(window.BP&&BP.tf&&BP.tf.getBackend?BP.tf.getBackend():null)},
+      topOnset:Object.entries(top).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>[+k+21,rd(v)]),
+      cands,notes:r?r.notes.map(n=>[rd(n.time),n.m,rd(n.p)]):null,perc:r?r.perc.map(q=>rd(q.time)):null,
+      hist:EAR.hist.map(e=>[e.k,e.m||e.ms||e.lo,e.t]),edited:EAR.edited};
+    const d=new Date(),pad=q=>String(q).padStart(2,'0');
+    const name=`guitar-aibo-diag-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+    const blob=new Blob([JSON.stringify(data)],{type:'text/plain'});
+    try{const file=new File([blob],name,{type:'text/plain'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file]});$('#learnIO').textContent='診断情報を共有しました';return}
+    }catch(e){if(e&&e.name==='AbortError'){$('#learnIO').textContent='共有をやめました';return}}
+    const url=URL.createObjectURL(blob),l=document.createElement('a');l.href=url;l.download=name;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+    $('#learnIO').textContent=`「${name}」を「ダウンロード」に保存しました。Claudeのチャットに貼ってください`;
+  }catch(e){$('#learnIO').textContent='書き出せませんでした：'+((e&&(e.name+': '+e.message))||e)}
 });
 /* 最後の録音を圧縮（m4a か webm）で書き出す：WAVはチャットに貼れないことがあるため。再生しながら録り直すので録音と同じ時間かかる */
 let REC_FILE=null;
