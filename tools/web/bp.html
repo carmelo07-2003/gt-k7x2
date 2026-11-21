@@ -1,0 +1,18 @@
+<!DOCTYPE html><html><body><script src="bp.min.js"></script><script>
+let model=null;
+async function runBP(name){
+  const ab=await (await fetch('data/'+name+'.wav')).arrayBuffer();
+  const buf=await new OfflineAudioContext(1,48000,48000).decodeAudioData(ab);
+  const x=buf.getChannelData(0),sr=buf.sampleRate;
+  const len=Math.ceil(x.length*22050/sr),oc=new OfflineAudioContext(1,len,22050),b=oc.createBuffer(1,x.length,sr);
+  b.getChannelData(0).set(x);const s=oc.createBufferSource();s.buffer=b;s.connect(oc.destination);s.start();
+  const r=(await oc.startRendering()).getChannelData(0);
+  let mx=0;for(let i=0;i<r.length;i++)mx=Math.max(mx,Math.abs(r[i]));const g=0.9/mx;for(let i=0;i<r.length;i++)r[i]*=g;
+  if(!model)model=new BP.BasicPitch('model/model.json');
+  const frames=[],onsets=[],contours=[];
+  const t0=performance.now();
+  await model.evaluateModel(r,(f,o,c)=>{frames.push(...f);onsets.push(...o);contours.push(...c)},()=>{});
+  const rd=a=>a.map(row=>row.map(v=>Math.round(v*1000)/1000));
+  return JSON.stringify({frames:rd(frames),onsets:rd(onsets),contours:rd(contours),x22:Array.from(r,v=>Math.round(v*1e5)/1e5),ms:performance.now()-t0});
+}
+</script></body></html>
