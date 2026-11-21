@@ -112,7 +112,7 @@
   /* ---------- あなたの修正から学んだ「補正」 ----------
    * 元の判定器の値（ロジット z）に、補正 b + a*z + Σ w_i*(標準化した特徴_i) を足す。
    * 補正が0なら元の判定器と同じ。学習は修正データだけで、強めの正則化をかけて少しずつ合わせる。 */
-  let CORR_NOTE = null, CORR_PERC = null;
+  let CORR_NOTE = null, CORR_PERC = null, CORR_HARM = null;
   function corrApply(cm, net, v, z) {
     if (!cm) return z;
     let s = cm.b + cm.a * z;
@@ -154,7 +154,7 @@
   }
   // 学習して、学習に使っていない分で「良くなったか」を確かめる。良くならなければ採用しない
   function learnFromRows(kind, recs) {
-    const net = kind === 'note' ? NOTE_NET2 : PERC_NET;
+    const net = kind === 'note' ? NOTE_NET2 : kind === 'harm' ? (HARM_NETS ? HARM_NETS.note2 : NOTE_NET2) : PERC_NET;
     if (!net) return { ok: false, reason: '判定器が読み込まれていません' };
     const th = net.th || 0.5;
     const all = []; recs.forEach((rc, ri) => rc.forEach(r => all.push(Object.assign({ rec: ri }, r))));
@@ -267,7 +267,8 @@
     // 2段目：まわりの判定結果（1オクターブ下や上が本物か、直前に同じ音があるか）も見て決め直す
     if (NOTE_NET2) {
       const ctx = contextFeatures(cands);
-      cands.forEach((c, i) => { c.v = c.f.concat(ctx[i]); c.z = mlpLogit(NOTE_NET2, c.v); c.p = sig(corrApply(CORR_NOTE, NOTE_NET2, c.v, c.z)); });
+      const cn = opt._swapped ? CORR_HARM : CORR_NOTE; // ハーモニクスモードでは、そのモード用の補正
+      cands.forEach((c, i) => { c.v = c.f.concat(ctx[i]); c.z = mlpLogit(NOTE_NET2, c.v); c.p = sig(corrApply(cn, NOTE_NET2, c.v, c.z)); });
     }
     else cands.forEach(c => { c.p = c.p1; });
     // 「ハーモニクスを弾いている」がONの時は、ハーモニクスで出せる高さ（開放弦の1・1.5・2オクターブ上）の基準をゆるめる
@@ -295,14 +296,20 @@
     }
     // 打音
     let perc = [], percAll = null;
-    if (opt.perc !== false) {
+    if (opt.perc !== false && opt.percSens !== 0) {
       const hfMax = Math.max(...hf.env), le = lowEnvelope(x);
       for (const c of percCandidates(x, hf, le)) {
         const f = percFeatures(c, x, hf, kept, hfMax, le, cands);
         const z = PERC_NET ? mlpLogit(PERC_NET, f) : 0;
         const p = PERC_NET ? sig(corrApply(CORR_PERC, PERC_NET, f, z)) : fallbackPerc(f);
         if (opt.keepCands) (percAll || (percAll = [])).push({ time: c.time, v: f, z });
-        if (p >= (opt.percThr || (PERC_NET && PERC_NET.th) || 0.5)) {
+        const pBase = opt.percThr || (PERC_NET && PERC_NET.th) || 0.5;
+        // 打音の感度：0=拾わない 1=少なめ 2=ふつう 3=多め
+        const ps = opt.percSens == null ? 2 : opt.percSens;
+        const pThr = ps === 1 ? Math.min(0.97, pBase + 0.15) : ps === 3 ? Math.max(0.2, pBase - 0.15) : pBase;
+        // 弾いた音の直後（0.2秒以内）の弱い「ドン」は、指が離れる音や弦のこすれのことが多い
+        const after = kept.some(n => n.p >= thr && c.time - n.time > -0.01 && c.time - n.time < (opt.afterWin || 0));
+        if (p >= (after ? Math.max(pThr, 0.9) : pThr)) {
           let lo = f[2] > 0.25;
           if (PERC_NET && PERC_NET.lohi) { const L = PERC_NET.lohi; let z = L.b; for (let i = 0; i < f.length; i++) z += L.w[i] * (f[i] - L.mu[i]) / L.sd[i]; lo = z >= 0; }
           perc.push({ time: c.time, lo, p, f });
@@ -468,7 +475,7 @@
   G.TabEngine = {
     transcribe, groupEvents, assignTab, features, percFeatures, onsetCandidates, percCandidates, hfEnvelope, lowEnvelope, partialE, f2t,
     setNets(n, p, n2, hn) { NOTE_NET = n; PERC_NET = p; NOTE_NET2 = n2 || null; HARM_NETS = hn || null; }, contextFeatures, mlp, NF,
-    setCorr(n, p) { CORR_NOTE = n || null; CORR_PERC = p || null; }, getCorr() { return { note: CORR_NOTE, perc: CORR_PERC }; },
+    setCorr(n, p, h) { CORR_NOTE = n || null; CORR_PERC = p || null; CORR_HARM = h || null; }, getCorr() { return { note: CORR_NOTE, perc: CORR_PERC, harm: CORR_HARM }; },
     learnFromRows, trainCorr, f1At, corrApply, learnRows,
   };
 })(typeof self !== 'undefined' ? self : globalThis);
