@@ -1,0 +1,7 @@
+TensorFlow.js (bundled in bp.min.js)
+Copyright Google LLC
+Licensed under the Apache License, Version 2.0 (see LICENSE-basic-pitch.txt for the full text).
+
+Basic Pitch (bundled in bp.min.js, model/)
+Copyright 2022 Spotify AB
+Licensed under the Apache License, Version 2.0.
